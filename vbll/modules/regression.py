@@ -8,7 +8,6 @@ class VBLLReturn():
     train_loss_fn: Callable[[torch.Tensor], torch.Tensor]
     val_loss_fn: Callable[[torch.Tensor], torch.Tensor]
 
-
 class VBLLRegression(nn.Module):
     """Variational Bayesian Linear Regression module.
 
