@@ -1,207 +1,142 @@
 import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+from dataclasses import dataclass
+from collections.abc import Callable
 import abc
+import warnings
 
 
-cov_param_map = {
-    'dense': DenseCovariance,
-    'diagonal': DiagonalCovariance,
-    # 'lowrank': LowRankCovariance
-}
-
-def get_cov_parameterization(p):
-  if p in cov_param_map:
-    return cov_param_map[p]
+def get_parameterization(p):
+  if p in cov_param_dict:
+    return cov_param_dict[p]
   else:
     raise ValueError('Must specify a valid covariance parameterization.')
 
-# ----- covariance objects
 
-class Covariance(abc.ABC, nn.Module):
-  @abc.abstractmethod
-  def cholesky(self):
-    raise NotImplementedError
+def tp(M):
+  return M.transpose(-1,-2)
 
-  @abc.abstractmethod
-  def mat(self):
-    raise NotImplementedError
+def sym(M):
+  return (M + tp(M))/2.
 
-  @abc.abstractmethod
-  def inverse_mat(self):
-    raise NotImplementedError
-
-  @abc.abstractmethod
-  def logdet(self):
-    raise NotImplementedError
-
-  @abc.abstractmethod
-  def trace(self):
-    raise NotImplementedError
-
-  @abc.abstractmethod
-  def weighted_inner_product(self):
-    raise NotImplementedError
-
-  @abc.abstractmethod
-  def inverse_weighted_inner_product(self):
-    raise NotImplementedError
-
-class DenseCovariance(Covariance):
-  def __init__(self,
-               mat_dim,
-               batch_dim=1,
-               diag_offset=0.,
-               requires_grad=True):
-
-    super(DenseCovariance, self).__init__()
-    self.mat_dim = mat_dim
-    self.batch_dim = batch_dim
-
-    log_diag_init = torch.randn(batch_dim, mat_dim)
-    self.log_diag = nn.Parameter(log_diag_init - diag_offset,
-                                requires_grad=requires_grad)
-
-    # by default, scale down off diag terms
-    off_diag_init = torch.randn(batch_dim, mat_dim, mat_dim)/mat_dim
-    self.off_diag = nn.Parameter(off_diag_init,
-                                 requires_grad=requires_grad)
-
+class Normal(torch.distributions.Normal):
+  def __init__(self, loc, var):
+    super(Normal, self).__init__(loc, var)
 
   @property
-  def cholesky(self):
-    return torch.tril(self.off_diag, diagonal=-1) + torch.diag_embed(torch.exp(self.log_diag))
+  def chol_covariance(self):
+    return torch.diag_embed(self.scale.sqrt())
 
   @property
-  def mat(self):
-    # Cholesky param
-    return self.cholesky @ tp(self.cholesky)
+  def covariance_diagonal(self):
+    return self.scale
 
   @property
-  def inverse_mat(self):
-    warnings.warn("Direct matrix inverse for dense covariances is O(N^3), consider using eg inverse weighted inner product")
-    L_tri_inv = torch.inverse(self.cholesky)
-    return tp(L_tri_inv) @ L_tri_inv
+  def covariance(self):
+    return torch.diag_embed(self.scale)
 
   @property
-  def logdet(self):
-    return 2*self.log_diag.sum(-1)
+  def precision(self):
+    return torch.diag_embed(1./self.scale)
 
   @property
-  def trace(self):
-    return (self.cholesky**2).sum(-1).sum(-1) # compute as frob norm squared
+  def logdet_covariance(self):
+    return torch.log(self.scale).sum(-1)
 
-  def weighted_inner_prod(self, b):
-    return ((tp(self.cholesky) @ b)**2).sum(-1).sum(-1)
+  @property
+  def logdet_precision(self):
+    return -torch.log(self.scale).sum(-1)
 
-  def inverse_weighted_inner_prod(self, b):
-    return (torch.linalg.solve(self.cholesky, b)**2).sum(-1).sum(-1)
+  @property
+  def trace_covariance(self):
+    return self.scale.sum(-1)
 
+  @property
+  def trace_precision(self):
+    return 1./self.scale.sum(-1)
 
-class DiagonalCovariance(Covariance):
-  def __init__(self,
-               mat_dim,
-               batch_dim=1,
-               diag_offset=0.,
-               requires_grad=True,
-               covariance_scale=None):
+  def covariance_weighted_inner_prod(self, b, reduce_dim=True):
+    assert b.shape[-1] == 1
+    prod = (self.scale.unsqueeze(-1) * (b ** 2)).sum(-2)
+    return prod.squeeze(-1) if reduce_dim else prod
 
-    super(DiagonalCovariance, self).__init__()
-    self.mat_dim = mat_dim
-    self.batch_dim = batch_dim
+  def precision_weighted_inner_prod(self, b, reduce_dim=True):
+    assert b.shape[-1] == 1
+    prod = (1./self.scale.unsqueeze(-1) * (b ** 2)).sum(-2)
+    return prod.squeeze(-1) if reduce_dim else prod
 
-    if covariance_scale is None:
-      log_diag_init = torch.randn(batch_dim, mat_dim)
+  def __add__(self, inp):
+    if isinstance(inp, Normal):
+      new_cov =  self.scale + inp.scale
+      return Normal(self.loc + inp.loc, torch.clip(new_cov, min = 1e-8))
     else:
-      log_diag_init = np.log(covariance_scale) * torch.ones(batch_dim, mat_dim)
+      raise NotImplementedError('Distribution addition only implemented for diag covs')
 
-    self.log_diag = nn.Parameter(log_diag_init - diag_offset,
-                                requires_grad=requires_grad)
+  def __matmul__(self, inp):
+    assert inp.shape[-2] == self.loc.shape[-1]
+    assert inp.shape[-1] == 1
+    new_cov = self.covariance_weighted_inner_prod(inp.unsqueeze(-3), reduce_dim = False)
+    return Normal(self.loc @ inp, torch.clip(new_cov, min = 1e-8))
 
-  @property
-  def diagonal(self):
-    return torch.exp(self.log_diag)
+  def squeeze(self, idx):
+    return Normal(self.loc.squeeze(idx), self.scale.squeeze(idx))
 
-  @property
-  def inverse_diagonal(self):
-    return torch.exp(-self.log_diag)
 
-  @property
-  def diagonal_sqrt(self):
-    return torch.exp(0.5 * self.log_diag)
-
-  @property
-  def diagonal_inv_sqrt(self):
-    return torch.exp(-0.5 * self.log_diag)
+class DenseNormal(torch.distributions.MultivariateNormal):
+  def __init__(self, loc, cholesky):
+    super(DenseNormal, self).__init__(loc, scale_tril=cholesky)
 
   @property
-  def cholesky(self):
-    return torch.diag_embed(torch.exp(0.5 * self.log_diag))
+  def mean(self):
+    return self.loc
 
   @property
-  def mat(self):
-    return torch.diag_embed(torch.exp(self.log_diag))
+  def chol_covariance(self):
+    return self.scale_tril
 
   @property
-  def inv_mat(self):
-    return torch.diag_embed(torch.exp(-self.log_diag))
+  def covariance(self):
+    return self.scale_tril @ tp(self.scale_tril)
 
   @property
-  def logdet(self):
-    return self.log_diag.sum(-1)
+  def inverse_covariance(self):
+    warnings.warn("Direct matrix inverse for dense covariances is O(N^3), consider using eg inverse weighted inner product")
+    return tp(torch.linalg.inv(self.scale_tril)) @ self.scale_tril
 
   @property
-  def inverse_logdet(self):
-    return -self.log_diag.sum(-1)
+  def logdet_covariance(self):
+    return torch.diagonal(self.scale_tril, dim1=-2, dim2=-1).log().sum(-1)
 
   @property
-  def trace(self):
-    return torch.exp(self.log_diag).sum(-1)
+  def trace_covariance(self):
+    return (self.scale_tril**2).sum(-1).sum(-1) # compute as frob norm squared
 
-  @property
-  def trace(self):
-    return torch.exp(-self.log_diag).sum(-1)
+  def covariance_weighted_inner_prod(self, b, reduce_dim=True):
+    assert b.shape[-1] == 1
+    prod = ((tp(self.scale_tril) @ b)**2).sum(-2)
+    return prod.squeeze(-1) if reduce_dim else prod
 
-  def weighted_inner_prod(self, b):
-    return ((torch.exp(0.5 * self.log_diag).unsqueeze(-1) * b)**2).sum(-1).sum(-1)
+  def precision_weighted_inner_prod(self, b, reduce_dim=True):
+    assert b.shape[-1] == 1
+    prod = (torch.linalg.solve(self.scale_tril, b)**2).sum(-2)
+    return prod.squeeze(-1) if reduce_dim else prod
 
-  def inverse_weighted_inner_prod(self, b):
-    return ((torch.exp(-0.5 * self.log_diag).unsqueeze(-1) * b)**2).sum(-1).sum(-1)
+  def __matmul__(self, inp):
+    assert inp.shape[-2] == self.loc.shape[-1]
+    assert inp.shape[-1] == 1
+    new_cov = self.covariance_weighted_inner_prod(inp.unsqueeze(-3), reduce_dim = False)
+    return Normal(self.loc @ inp, torch.clip(new_cov, min = 1e-8))
 
-def KL(p1, p2):
-    """Computes KL divergence between Gaussian random variables."""
-    # TODO(jamesharrison)
-    pass
+  def squeeze(self, idx):
+    return DenseNormal(self.loc.squeeze(idx), self.scale_tril.squeeze(idx))
 
-def gaussian_vector_product(W, x):
-  """Computes the Gaussian distribution resulting from the product of a Gaussian
-  distributed tensor W with a vector x."""
-  # TODO(jamesharrison): check dims
-  return Gaussian(W.mean @ x, W.cov.weighted_inner_prod(x))
+# class MatrixNormal(torch.distributions.Normal):
+#   pass  # TODO
 
-def gaussian_scalar_product(gaussian, s):
-  return Gaussian(gaussian.mean * s, gaussian.cov * s**2)
-
-def add_gaussians(p1, p2):
-  """Returns sum of gaussian random variables assuming uncorrelated"""
-  # construct combined covariance object:
-  # TODO(jamesharrison)
-  # combined_cov =
-  return Gaussian(p1.mean + p2.mean, combined_cov)
-
-# TODO(jamesharrison): is this a stupid abstraction?
-# ----- gaussian objects
-
-class Gaussian(nn.Module):
-  def __init__(self, mean, cov):
-    self.mean = mean
-    self.cov = cov
-
-  def log_prob(self, x):
-    """Gaussian log probability"""
-    logprob = -0.5 * self.cov.inverse_weighted_inner_prod(x - self.mean)
-    logprob -= 0.5 * self.cov.inverse_logdet
-    logprob -= 0.5 * self.cov.mat_dim * np.log(2 * np.pi)
-    return logprob
-
-  def sample(self):
-    # TODO(jamesharrison)
-    pass
+cov_param_dict = {
+    'dense': DenseNormal,
+    'diagonal': Normal,
+    # 'lowrank': LowRankCovariance
+}
