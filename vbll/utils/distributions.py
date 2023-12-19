@@ -7,6 +7,11 @@ from collections.abc import Callable
 import abc
 import warnings
 
+def get_parameterization(p):
+  if p in cov_param_dict:
+    return cov_param_dict[p]
+  else:
+    raise ValueError('Must specify a valid covariance parameterization.')
 
 def tp(M):
     return M.transpose(-1,-2)
@@ -126,3 +131,10 @@ class DenseNormal(torch.distributions.MultivariateNormal):
 
     def squeeze(self, idx):
         return DenseNormal(self.loc.squeeze(idx), self.scale_tril.squeeze(idx))
+
+
+cov_param_dict = {
+    'dense': DenseNormal,
+    'diagonal': Normal,
+    # 'lowrank': LowRankCovariance
+}
