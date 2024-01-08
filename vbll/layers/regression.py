@@ -1,6 +1,6 @@
 import torch
 from dataclasses import dataclass
-from vbll.utils.distributions import Normal, DenseNormal
+from vbll.vbll.utils.distributions import Normal, DenseNormal
 
 
 def KL(p, q_scale):
