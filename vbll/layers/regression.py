@@ -1,7 +1,7 @@
 import torch
 from dataclasses import dataclass
 from vbll.vbll.utils.distributions import Normal, DenseNormal
-
+from collections.abc import Callable
 
 def KL(p, q_scale):
     feat_dim = p.mean.shape[-1]
