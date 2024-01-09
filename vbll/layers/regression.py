@@ -1,6 +1,6 @@
 import torch
 from dataclasses import dataclass
-from vbll.vbll.utils.distributions import Normal, DenseNormal
+from vbll.vbll.utils.distributions import Normal, DenseNormal, get_parameterization
 from collections.abc import Callable
 import torch.nn as nn
 
