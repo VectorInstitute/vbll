@@ -1,8 +1,10 @@
+import numpy as np
 import torch
 from dataclasses import dataclass
 from vbll.vbll.utils.distributions import Normal, DenseNormal, get_parameterization
 from collections.abc import Callable
 import torch.nn as nn
+
 
 def KL(p, q_scale):
     feat_dim = p.mean.shape[-1]
