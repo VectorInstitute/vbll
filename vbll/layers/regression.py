@@ -31,8 +31,8 @@ class VBLLRegression(nn.Module):
     in_features : int
         Number of input features
     out_features : int
-        Number of output features   
-    regularization_weight : float   
+        Number of output features
+    regularization_weight : float
         Weight on regularization term in ELBO
     parameterization : str
         Parameterization of covariance matrix. Currently supports 'dense' and 'diagonal'
@@ -49,7 +49,7 @@ class VBLLRegression(nn.Module):
                  regularization_weight,
                  parameterization='dense',
                  prior_scale=1.,
-                 wishart_scale=1.,
+                 wishart_scale=1e-2,
                  dof=1.):
         super(VBLLRegression, self).__init__()
 
@@ -67,31 +67,31 @@ class VBLLRegression(nn.Module):
         # last layer distribution
         self.W_dist = get_parameterization(parameterization)
         self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
-        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - np.log(in_features))
+        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
         if parameterization == 'dense':
           self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features)
 
-    def noise_cov(self):
+    def noise_chol(self):
       return torch.exp(self.noise_logdiag)
 
-    def W_cov(self):
+    def W_chol(self):
       out = torch.exp(self.W_logdiag)
       if self.W_dist == DenseNormal:
         out = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(out)
+
       return out
 
     def W(self):
-      return self.W_dist(self.W_mean, self.W_cov())
+      return self.W_dist(self.W_mean, self.W_chol())
 
     def noise(self):
-      return Normal(self.noise_mean, self.noise_cov())
+      return Normal(self.noise_mean, self.noise_chol())
 
     def forward(self, x):
         out = VBLLReturn(self.predictive(x),
                          self._get_train_loss_fn(x),
                          self._get_val_loss_fn(x))
         return out
-
 
     def predictive(self, x):
         return (self.W() @ x[..., None]).squeeze(-1) + self.noise()
@@ -102,14 +102,13 @@ class VBLLRegression(nn.Module):
             # construct predictive density N(W @ phi, Sigma)
             W = self.W()
             noise = self.noise()
-            pred_density = Normal((W.mean @ x[...,None]).squeeze(-1), noise.covariance_diagonal)
+            pred_density = Normal((W.mean @ x[...,None]).squeeze(-1), noise.scale)
             pred_likelihood = pred_density.log_prob(y)
 
-            trace_term = 0.5*((W.covariance_weighted_inner_prod(x.unsqueeze(-2)[..., None])) * (1./noise.trace_covariance))
+            trace_term = 0.5*((W.covariance_weighted_inner_prod(x.unsqueeze(-2)[..., None])) * noise.trace_precision)
 
             kl_term = KL(W, self.prior_scale)
             wishart_term = (self.dof * noise.logdet_precision - 0.5 * self.wishart_scale * noise.trace_precision)
-
             total_elbo = torch.mean(pred_likelihood - trace_term)
             total_elbo += self.regularization_weight * (wishart_term - kl_term)
             return -total_elbo
