@@ -51,7 +51,7 @@ class VBLLClassificationD(nn.Module):
         # last layer distribution
         self.W_dist = get_parameterization(parameterization)
         self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
-        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - np.log(in_features))
+        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
         if parameterization == 'dense':
             self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features)
 
@@ -60,20 +60,20 @@ class VBLLClassificationD(nn.Module):
 
         self.return_ood = return_ood
 
-    def noise_cov(self):
+    def noise_chol(self):
         return torch.exp(self.noise_logdiag)
 
-    def W_cov(self):
+    def W_chol(self):
         out = torch.exp(self.W_logdiag)
         if self.W_dist == DenseNormal:
             out = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(out)
         return out
 
     def W(self):
-        return self.W_dist(self.W_mean, self.W_cov())
+        return self.W_dist(self.W_mean, self.W_chol())
 
     def noise(self):
-        return Normal(self.noise_mean, self.noise_cov())
+        return Normal(self.noise_mean, self.noise_chol())
 
     # ----- bounds
 
@@ -172,10 +172,10 @@ class VBLLClassificationG(nn.Module):
 
         self.return_ood = return_ood
 
-    def noise_cov(self):
+    def noise_chol(self):
         return torch.exp(self.noise_logdiag)
 
-    def mu_cov(self):
+    def mu_chol(self):
         out = torch.exp(self.mu_logdiag)
         # TODO(jamesharrison): add impl for dense/low rank cov
         return out
@@ -184,7 +184,7 @@ class VBLLClassificationG(nn.Module):
         return self.mu_dist(self.mu_mean, self.mu_cov())
 
     def noise(self):
-        return Normal(self.noise_mean, self.noise_cov())
+        return Normal(self.noise_mean, self.noise_chol())
 
     # ----- bounds
 
