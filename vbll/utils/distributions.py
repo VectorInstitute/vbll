@@ -21,7 +21,7 @@ def sym(M):
 
 class Normal(torch.distributions.Normal):
     def __init__(self, loc, chol):
-        super(Normal, self).__init__(loc, (torch.clip(chol, min = 1e-6)))
+        super(Normal, self).__init__(loc, chol)
 
     @property
     def mean(self):
