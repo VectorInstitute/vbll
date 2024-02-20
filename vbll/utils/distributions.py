@@ -20,8 +20,8 @@ def sym(M):
     return (M + tp(M))/2.
 
 class Normal(torch.distributions.Normal):
-    def __init__(self, loc, var):
-        super(Normal, self).__init__(loc, torch.sqrt(torch.clip(var, min = 1e-6)))
+    def __init__(self, loc, chol):
+        super(Normal, self).__init__(loc, (torch.clip(chol, min = 1e-6)))
 
     @property
     def mean(self):
@@ -76,9 +76,9 @@ class Normal(torch.distributions.Normal):
     def __add__(self, inp):
         if isinstance(inp, Normal):
             new_cov =  self.var + inp.var
-            return Normal(self.mean + inp.mean, torch.clip(new_cov, min = 1e-12))
+            return Normal(self.mean + inp.mean, torch.sqrt(torch.clip(new_cov, min = 1e-12)))
         elif isinstance(inp, torch.Tensor):
-            return Normal(self.mean + inp, self.var)
+            return Normal(self.mean + inp, self.scale)
         else:
             raise NotImplementedError('Distribution addition only implemented for diag covs')
 
@@ -86,10 +86,10 @@ class Normal(torch.distributions.Normal):
         assert inp.shape[-2] == self.loc.shape[-1]
         assert inp.shape[-1] == 1
         new_cov = self.covariance_weighted_inner_prod(inp.unsqueeze(-3), reduce_dim = False)
-        return Normal(self.loc @ inp, torch.clip(new_cov, min = 1e-12))
+        return Normal(self.loc @ inp, torch.sqrt(torch.clip(new_cov, min = 1e-12)))
 
     def squeeze(self, idx):
-        return Normal(self.loc.squeeze(idx), self.scale.squeeze(idx) ** 2)
+        return Normal(self.loc.squeeze(idx), self.scale.squeeze(idx))
 
 class DenseNormal(torch.distributions.MultivariateNormal):
     def __init__(self, loc, cholesky):
@@ -134,7 +134,7 @@ class DenseNormal(torch.distributions.MultivariateNormal):
         assert inp.shape[-2] == self.loc.shape[-1]
         assert inp.shape[-1] == 1
         new_cov = self.covariance_weighted_inner_prod(inp.unsqueeze(-3), reduce_dim = False)
-        return Normal(self.loc @ inp, torch.clip(new_cov, min = 1e-12))
+        return Normal(self.loc @ inp, torch.sqrt(torch.clip(new_cov, min = 1e-12)))
 
     def squeeze(self, idx):
         return DenseNormal(self.loc.squeeze(idx), self.scale_tril.squeeze(idx))
