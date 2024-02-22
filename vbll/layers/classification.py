@@ -199,7 +199,7 @@ class VBLLClassificationG(nn.Module):
             # Is there a more elegant way to handle this?
             linear_term = linear_term.sum(-1)
 
-        trace_term = (self.mu.covariance_diagonal()[y] / self.noise.covariance_diagonal()).sum(-1)
+        trace_term = (self.mu().covariance_diagonal()[y] / self.noise().covariance_diagonal()).sum(-1)
 
         pre_lse_term = self.logit_predictive(x)
         lse_term = torch.logsumexp(pre_lse_term, dim=-1)
