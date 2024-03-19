@@ -3,11 +3,6 @@
 ## Introduction
 VBLL introduces a deterministic variational formulation for training Bayesian last layers in neural networks. This method offers a computationally efficient approach to improving uncertainty estimation in deep learning models. By leveraging this technique, VBLL can be trained and evaluated with quadratic complexity in last layer width, making it nearly computationally free to add to standard architectures. Our work focuses on enhancing predictive accuracy, calibration, and out-of-distribution detection over baselines in both regression and classification.
 
-# VBLL
-
-## Overview
-VBLL is a software package developed by the Vector Institute, designed for research and applications in machine learning. The repository includes Jupyter Notebooks for demonstrative purposes in discriminative classification and regression, as well as a Python setup file for installation.
-
 ## Installation
 ```bash
 # Clone the repository
@@ -18,6 +13,7 @@ cd vbll
 
 # Install required dependencies
 pip install -e .
+```
 
 ## Usage
 The repository includes Jupyter Notebooks demonstrating the application of VBLL for regression and classification tasks. For detailed usage examples, please refer to the provided notebooks.
@@ -35,6 +31,6 @@ If you find VBLL useful in your research, please consider citing our paper:
   booktitle={International Conference on Learning Representations},
   year={2024}
 }
-
+```
 
 
