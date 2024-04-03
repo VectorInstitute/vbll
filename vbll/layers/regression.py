@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from dataclasses import dataclass
-from vbll.vbll.utils.distributions import Normal, DenseNormal, get_parameterization
+from vbll.utils.distributions import Normal, DenseNormal, get_parameterization
 from collections.abc import Callable
 import torch.nn as nn
 
@@ -22,7 +22,7 @@ class VBLLReturn():
     ood_scores: None | Callable[[torch.Tensor], torch.Tensor] = None
 
 
-class VBLLRegression(nn.Module):
+class Regression(nn.Module):
     """
     Variational Bayesian Linear Regression
 
@@ -51,7 +51,7 @@ class VBLLRegression(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1e-2,
                  dof=1.):
-        super(VBLLRegression, self).__init__()
+        super(Regression, self).__init__()
 
         self.wishart_scale = wishart_scale
         self.dof = (dof + out_features + 1.)/2.

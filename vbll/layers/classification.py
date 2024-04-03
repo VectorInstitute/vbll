@@ -7,7 +7,7 @@ from collections.abc import Callable
 import abc
 import warnings
 
-from vbll.vbll.utils.distributions import Normal, DenseNormal, get_parameterization
+from vbll.utils.distributions import Normal, DenseNormal, get_parameterization
 
 def KL(p, q_scale):
     feat_dim = p.mean.shape[-1]
@@ -24,7 +24,7 @@ class VBLLReturn():
     val_loss_fn: Callable[[torch.Tensor], torch.Tensor]
     ood_scores: None | Callable[[torch.Tensor], torch.Tensor] = None
 
-class VBLLClassificationD(nn.Module):
+class DiscClassification(nn.Module):
     def __init__(self,
                  in_features,
                  out_features,
@@ -35,7 +35,7 @@ class VBLLClassificationD(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1.,
                  dof=1.):
-        super(VBLLClassificationD, self).__init__()
+        super(DiscClassification, self).__init__()
 
         self.wishart_scale = wishart_scale
         self.dof = (dof + out_features + 1.)/2.
@@ -135,7 +135,7 @@ class VBLLClassificationD(nn.Module):
     def max_predictive(self, x):
         return torch.max(self.predictive(x), dim=-1)[0]
 
-class VBLLClassificationG(nn.Module):
+class GenClassification(nn.Module):
     # TODO(jamesharrison): add dirichlet
     def __init__(self,
                  in_features,
@@ -147,7 +147,7 @@ class VBLLClassificationG(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1.,
                  dof=1.):
-        super(VBLLClassificationG, self).__init__()
+        super(GenClassification, self).__init__()
 
         self.wishart_scale = wishart_scale
         self.dof = (dof + in_features + 1.)/2.
