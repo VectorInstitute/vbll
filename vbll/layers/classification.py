@@ -35,6 +35,19 @@ class DiscClassification(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1.,
                  dof=1.):
+        """Initailize a DiscClassification model.
+
+        :param in_features: Number of input features
+        :param out_features: Number of output features
+        :param regularization_weight: Weight of regularization term
+        :param parameterization: Parameterization of the last layer distribution.
+        :param softmax_bound: Bound to use for softmax.
+        :param return_ood: Whether to return OOD scores.
+        :param prior_scale: Scale of the prior.
+        :param wishart_scale: Scale of the Wishart distribution.
+        :param dof: Degrees of freedom of the Wishart distribution.
+
+        """
         super(DiscClassification, self).__init__()
 
         self.wishart_scale = wishart_scale
@@ -147,6 +160,20 @@ class GenClassification(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1.,
                  dof=1.):
+        """Initailize a GenClassification model.
+
+        :param in_features: Number of input features
+        :param out_features: Number of output features
+        :param regularization_weight: Weight of regularization term
+        :param parameterization: Parameterization of the last layer distribution. 
+        :param softmax_bound: Bound to use for softmax.
+        :param return_ood: Whether to return OOD scores.
+        :param prior_scale: Scale of the prior.
+        :param wishart_scale: Scale of the Wishart distribution.
+        :param dof: Degrees of freedom of the Wishart distribution.
+
+        """
+
         super(GenClassification, self).__init__()
 
         self.wishart_scale = wishart_scale

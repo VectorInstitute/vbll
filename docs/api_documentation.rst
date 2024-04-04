@@ -3,15 +3,15 @@ API Reference
 
 Generative Classification
 -------------------------
-.. autoclass:: vbll.classification.GenClassification
+.. autoclass:: vbll.layers.classification.GenClassification
     :members:
 
 Discriminative Classification
 -------------------------
-.. autoclass:: vbll.classification.DiscClassification
+.. autoclass:: vbll.layers.classification.DiscClassification
     :members:
 
 Regression
 -------------------------
-.. autoclass:: vbll.regression.Regression
+.. autoclass:: vbll.layers.regression.Regression
     :members:
