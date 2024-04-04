@@ -54,3 +54,7 @@ target/
 
 # VS Code
 .vscode/
+
+#Docs
+_build/
+docs-env/
