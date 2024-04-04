@@ -1,19 +1,17 @@
 API Reference
 ==================
 
-.. currentmodule:: vbll
-
 Generative Classification
 -------------------------
-.. autoclass:: classification.GenClassification
+.. autoclass:: vbll.classification.GenClassification
     :members:
 
 Discriminative Classification
 -------------------------
-.. autoclass:: classification.DiscClassification
+.. autoclass:: vbll.classification.DiscClassification
     :members:
 
 Regression
 -------------------------
-.. autoclass:: regression.Regression
+.. autoclass:: vbll.regression.Regression
     :members:
