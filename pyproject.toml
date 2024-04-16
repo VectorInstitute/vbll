@@ -1,14 +1,14 @@
 [tool.poetry]
 name = "vbll"
-version = "0.1.2"
+version = "0.1.3"
 description = ""
 authors = ["John Willes <johnwilles@gmail.com>"]
 readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.9"
-torch = "^1.6.0"
-numpy = "^1.21.0"
+torch = ">= 1.6.0"
+numpy = ">= 1.21.0"
 
 
 [build-system]
