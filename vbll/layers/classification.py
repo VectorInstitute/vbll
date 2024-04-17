@@ -35,7 +35,7 @@ class DiscClassification(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1.,
                  dof=1.):
-        """Initailize a DiscClassification model.
+        """Initailize a DiscClassification layer.
 
         :param in_features: Number of input features
         :param out_features: Number of output features
@@ -160,7 +160,7 @@ class GenClassification(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1.,
                  dof=1.):
-        """Initailize a GenClassification model.
+        """Initailize a GenClassification layer.
 
         :param in_features: Number of input features
         :param out_features: Number of output features

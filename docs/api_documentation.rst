@@ -1,5 +1,5 @@
 API Reference
-==================
+=============
 
 .. automodule:: vbll
     :members:
