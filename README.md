@@ -9,7 +9,7 @@ The easiest way to install VBLL is with pip:
 pip install vbll
 ```
 
-You can also install via cloning the GitHub repo:
+You can also install by cloning the GitHub repo:
 ```bash
 # Clone the repository
 git clone https://github.com/VectorInstitute/vbll.git
@@ -21,8 +21,13 @@ cd vbll
 pip install -e .
 ```
 
-## Usage
-The repository includes Jupyter Notebooks demonstrating the application of VBLL for regression and classification tasks. For detailed usage examples, please refer to the provided notebooks.
+## Usage and Tutorials
+Documentation is available [here](https://vbll.readthedocs.io/en/latest/). 
+
+You can also check out our tutorial colabs: 
+
+- Regression: <a href="https://colab.research.google.com/github/VectorInstitute/vbll/blob/main/docs/tutorials/VBLL_Regression.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
+- Classification: <a href="https://colab.research.google.com/github/VectorInstitute/vbll/blob/main/docs/tutorials/VBLL_Classification.ipynb" target="_parent"><img src="https://colab.research.google.com/assets/colab-badge.svg" alt="Open In Colab"/></a>
 
 ## Contributing
 Contributions to the VBLL project are welcome. If you're interested in contributing, please read the contribution guidelines in the repository.
