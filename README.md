@@ -1,6 +1,15 @@
 
 <h1 align="center">Variational Bayesian Last Layers (VBLL)</h1>
 
+<div align="center">
+
+  <a href="">[![PyPI](https://img.shields.io/pypi/v/vbll)](https://pypi.org/project/vbll)</a>
+  <a href="">[![Documentation Status](https://readthedocs.org/projects/vbll/badge/?version=latest)](https://vbll.readthedocs.io/en/latest/?badge=latest)</a>
+  <a href="">[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)</a>
+
+</div>
+
+
 VBLL introduces a deterministic variational formulation for training Bayesian last layers in neural networks. This method offers a computationally efficient approach to improving uncertainty estimation in deep learning models. By leveraging this technique, VBLL can be trained and evaluated with quadratic complexity in last layer width, making it nearly computationally free to add to standard architectures. Our work focuses on enhancing predictive accuracy, calibration, and out-of-distribution detection over baselines in both regression and classification.
 
 ## Installation
