@@ -25,6 +25,29 @@ class VBLLReturn():
     ood_scores: None | Callable[[torch.Tensor], torch.Tensor] = None
 
 class DiscClassification(nn.Module):
+    """Variational Bayesian Disciminative Classification
+
+        Parameters
+        ----------
+        in_features : int
+            Number of input features
+        out_features : int
+            Number of output features
+        regularization_weight : float
+            Weight on regularization term in ELBO
+        parameterization : str
+            Parameterization of covariance matrix. Currently supports 'dense' and 'diagonal'
+        softmax_bound : str
+            Bound to use for softmax. Currently supports 'jensen'
+        return_ood : bool
+            Whether to return OOD scores
+        prior_scale : float
+            Scale of prior covariance matrix
+        wishart_scale : float
+            Scale of Wishart prior on noise covariance
+        dof : float
+            Degrees of freedom of Wishart prior on noise covariance
+     """
     def __init__(self,
                  in_features,
                  out_features,
@@ -35,19 +58,6 @@ class DiscClassification(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1.,
                  dof=1.):
-        """Initailize a DiscClassification layer.
-
-        :param in_features: Number of input features
-        :param out_features: Number of output features
-        :param regularization_weight: Weight of regularization term
-        :param parameterization: Parameterization of the last layer distribution.
-        :param softmax_bound: Bound to use for softmax.
-        :param return_ood: Whether to return OOD scores.
-        :param prior_scale: Scale of the prior.
-        :param wishart_scale: Scale of the Wishart distribution.
-        :param dof: Degrees of freedom of the Wishart distribution.
-
-        """
         super(DiscClassification, self).__init__()
 
         self.wishart_scale = wishart_scale
@@ -149,7 +159,29 @@ class DiscClassification(nn.Module):
         return torch.max(self.predictive(x), dim=-1)[0]
 
 class GenClassification(nn.Module):
-    # TODO(jamesharrison): add dirichlet
+    """Variational Bayesian Generative Classification
+
+        Parameters
+        ----------
+        in_features : int
+            Number of input features
+        out_features : int
+            Number of output features
+        regularization_weight : float
+            Weight on regularization term in ELBO
+        parameterization : str
+            Parameterization of covariance matrix. Currently supports 'dense' and 'diagonal'
+        softmax_bound : str
+            Bound to use for softmax. Currently supports 'jensen'
+        return_ood : bool
+            Whether to return OOD scores
+        prior_scale : float
+            Scale of prior covariance matrix
+        wishart_scale : float
+            Scale of Wishart prior on noise covariance
+        dof : float
+            Degrees of freedom of Wishart prior on noise covariance
+     """
     def __init__(self,
                  in_features,
                  out_features,
@@ -160,20 +192,6 @@ class GenClassification(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1.,
                  dof=1.):
-        """Initailize a GenClassification layer.
-
-        :param in_features: Number of input features
-        :param out_features: Number of output features
-        :param regularization_weight: Weight of regularization term
-        :param parameterization: Parameterization of the last layer distribution. 
-        :param softmax_bound: Bound to use for softmax.
-        :param return_ood: Whether to return OOD scores.
-        :param prior_scale: Scale of the prior.
-        :param wishart_scale: Scale of the Wishart distribution.
-        :param dof: Degrees of freedom of the Wishart distribution.
-
-        """
-
         super(GenClassification, self).__init__()
 
         self.wishart_scale = wishart_scale

@@ -1,9 +1,6 @@
 API Reference
 =============
 
-.. .. automodule:: vbll
-..     :members:
-
 Generative Classification
 -------------------------
 .. autoclass:: vbll.layers.classification.GenClassification
