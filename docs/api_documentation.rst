@@ -1,8 +1,5 @@
 API Reference
-==================
-
-.. automodule:: vbll
-    :members:
+=============
 
 Generative Classification
 -------------------------
