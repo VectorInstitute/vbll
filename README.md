@@ -6,6 +6,7 @@
   <a href="">[![PyPI](https://img.shields.io/pypi/v/vbll)](https://pypi.org/project/vbll)</a>
   <a href="">[![Documentation Status](https://readthedocs.org/projects/vbll/badge/?version=latest)](https://vbll.readthedocs.io/en/latest/?badge=latest)</a>
   <a href="">[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)</a>
+  <a href="">[![arXiv](https://img.shields.io/badge/arXiv-2404.11599-b31b1b.svg)](https://arxiv.org/abs/2404.11599)</a>
 
 </div>
 
@@ -13,6 +14,7 @@
 VBLL introduces a deterministic variational formulation for training Bayesian last layers in neural networks. This method offers a computationally efficient approach to improving uncertainty estimation in deep learning models. By leveraging this technique, VBLL can be trained and evaluated with quadratic complexity in last layer width, making it nearly computationally free to add to standard architectures. Our work focuses on enhancing predictive accuracy, calibration, and out-of-distribution detection over baselines in both regression and classification.
 
 ## Installation
+
 The easiest way to install VBLL is with pip:
 ```bash
 pip install vbll
@@ -42,7 +44,7 @@ You can also check out our tutorial colabs:
 Contributions to the VBLL project are welcome. If you're interested in contributing, please read the contribution guidelines in the repository.
 
 ## Citation
-If you find VBLL useful in your research, please consider citing our paper:
+If you find VBLL useful in your research, please consider citing our [paper](https://arxiv.org/abs/2404.11599):
 
 ```bibtex
 @inproceedings{harrison2024vbll,

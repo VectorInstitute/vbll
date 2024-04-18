@@ -15,24 +15,20 @@ VBLL introduces a deterministic variational formulation for training Bayesian la
 Citation
 --------
 
-If you use VBLL in your research, please cite the following paper:
+If you use VBLL in your research, please cite the following paper::
 
-```
-@inproceedings{harrison2024vbll,
-  title={Variational Bayesian Last Layers},
-  author={Harrison, James and Willes, John and Snoek, Jasper},
-  booktitle={International Conference on Learning Representations (ICLR)},
-  year={2024}
-}
-```
+   @inproceedings{harrison2024vbll,
+   title={Variational Bayesian Last Layers},
+   author={Harrison, James and Willes, John and Snoek, Jasper},
+   booktitle={International Conference on Learning Representations (ICLR)},
+   year={2024}
+   }
 
 
-Contents
---------
 
 .. toctree::
    :maxdepth: 2
-   .. :caption: Contents:
+   :caption: Contents:
 
    getting_started
    tutorials
