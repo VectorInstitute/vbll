@@ -13,13 +13,13 @@ Requirements
 Installation
 ------------
 
-To install ``vbll`` from `PyPI <https://pypi.org/project/vbll/>`_:
+The easiest way to install VBLL is with pip:
 
 .. code-block:: console
 
     $ pip install vbll
 
-To install ``vbll`` from source:
+You can also install by cloning the GitHub repo:
 
 .. code-block:: console
 

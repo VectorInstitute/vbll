@@ -1,7 +1,7 @@
 Tutorials
 =========
 
-Explore this set of tutorials to get familiar with different vbll use cases. 
+Explore this set of tutorials to get familiar with applications of VBLL to regression and classification use cases. 
 
 .. toctree::
    :maxdepth: 1
