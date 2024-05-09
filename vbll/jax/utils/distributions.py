@@ -3,8 +3,6 @@ import jax.numpy as jnp
 from jax.scipy.linalg import inv, solve
 import warnings
 
-import 
-
 def tp(M):
     return M.transpose(-3,-1,-2)
 
