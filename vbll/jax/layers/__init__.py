@@ -1,1 +1,1 @@
-from .regression import Regression as Regression_JAX
+from .regression import Regression as Regression
