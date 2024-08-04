@@ -57,6 +57,7 @@ class DiscClassification(nn.Module):
                  return_ood=False,
                  prior_scale=1.,
                  wishart_scale=1.,
+                 cov_rank=None,
                  dof=1.):
         super(DiscClassification, self).__init__()
 
@@ -74,29 +75,32 @@ class DiscClassification(nn.Module):
         # last layer distribution
         self.W_dist = get_parameterization(parameterization)
         self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
+
         self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
         if parameterization == 'dense':
             self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features)
-
+        elif parameterization == 'lowrank':
+            self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, cov_rank)/in_features)
+        
         if softmax_bound == 'jensen':
             self.softmax_bound = self.jensen_bound
 
         self.return_ood = return_ood
 
-    def noise_chol(self):
-        return torch.exp(self.noise_logdiag)
-
-    def W_chol(self):
-        out = torch.exp(self.W_logdiag)
-        if self.W_dist == DenseNormal:
-            out = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(out)
-        return out
-
     def W(self):
-        return self.W_dist(self.W_mean, self.W_chol())
+        cov_diag = torch.exp(self.W_logdiag)
+        if self.W_dist == Normal:
+            cov = self.W_dist(self.W_mean, cov_diag)
+        elif self.W_dist == DenseNormal:
+            tril = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
+            cov = self.W_dist(self.W_mean, tril)
+        elif self.W_dist == LowRankNormal:
+            cov = self.W_dist(self.W_mean, self.W_offdiag, cov_diag)
+
+        return cov
 
     def noise(self):
-        return Normal(self.noise_mean, self.noise_chol())
+        return Normal(self.noise_mean, torch.exp(self.noise_logdiag))
 
     # ----- bounds
 
@@ -217,19 +221,12 @@ class GenClassification(nn.Module):
 
         self.return_ood = return_ood
 
-    def noise_chol(self):
-        return torch.exp(self.noise_logdiag)
-
-    def mu_chol(self):
-        out = torch.exp(self.mu_logdiag)
-        # TODO(jamesharrison): add impl for dense/low rank cov
-        return out
-
     def mu(self):
-        return self.mu_dist(self.mu_mean, self.mu_chol())
+        # TODO(jamesharrison): add impl for dense/low rank cov
+        return self.mu_dist(self.mu_mean, torch.exp(self.mu_logdiag))
 
     def noise(self):
-        return Normal(self.noise_mean, self.noise_chol())
+        return Normal(self.noise_mean, torch.exp(self.noise_logdiag))
 
     # ----- bounds
 
@@ -278,7 +275,6 @@ class GenClassification(nn.Module):
     def _get_train_loss_fn(self, x):
 
         def loss_fn(y):
-            # print('computing loss fn')
             noise = self.noise()
             kl_term = KL(self.mu(), self.prior_scale)
             wishart_term = (self.dof * noise.logdet_precision - 0.5 * self.wishart_scale * noise.trace_precision)
