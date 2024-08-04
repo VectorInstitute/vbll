@@ -140,8 +140,64 @@ class DenseNormal(torch.distributions.MultivariateNormal):
         return DenseNormal(self.loc.squeeze(idx), self.scale_tril.squeeze(idx))
 
 
+class LowRankNormal(torch.distributions.LowRankMultivariateNormal):
+    def __init__(self, loc, cov_factor, diag):
+        super(LowRankNormal, self).__init__(loc, cov_factor=cov_factor, cov_diag=diag)
+
+    @property
+    def mean(self):
+        return self.loc
+
+    @property
+    def chol_covariance(self):
+        raise NotImplementedError()
+
+    @property
+    def covariance(self):
+        return self.cov_factor @ tp(self.cov_factor) + torch.diag_embed(self.cov_diag)
+
+    @property
+    def inverse_covariance(self):
+        # TODO(jamesharrison): implement via woodbury
+        raise NotImplementedError()
+
+    @property
+    def logdet_covariance(self):
+        # Apply Matrix determinant lemma
+        term1 = torch.log(self.cov_diag).sum(-1)
+        arg1 = tp(self.cov_factor) @ (self.cov_factor/self.cov_diag.unsqueeze(-1))
+        term2 = torch.linalg.det(arg1 + torch.eye(arg1.shape[-1])).log()
+        return term1 + term2
+
+    @property
+    def trace_covariance(self):
+        # trace of sum is sum of traces
+        trace_diag = self.cov_diag.sum(-1)
+        trace_lowrank = (self.cov_factor ** 2).sum(-1).sum(-1)
+        return trace_diag + trace_lowrank
+
+    def covariance_weighted_inner_prod(self, b, reduce_dim=True):
+        assert b.shape[-1] == 1
+        diag_term = (self.cov_diag.unsqueeze(-1) * (b ** 2)).sum(-2)
+        factor_term = ((tp(self.cov_factor) @ b) ** 2).sum(-2)
+        prod = diag_term + factor_term
+        return prod.squeeze(-1) if reduce_dim else prod
+
+    def precision_weighted_inner_prod(self, b, reduce_dim=True):
+        raise NotImplementedError()
+
+    def __matmul__(self, inp):
+        assert inp.shape[-2] == self.loc.shape[-1]
+        assert inp.shape[-1] == 1
+        new_cov = self.covariance_weighted_inner_prod(inp.unsqueeze(-3), reduce_dim = False)
+        return Normal(self.loc @ inp, torch.sqrt(torch.clip(new_cov, min = 1e-12)))
+
+    def squeeze(self, idx):
+        return LowRankNormal(self.loc.squeeze(idx), self.cov_factor.squeeze(idx), self.cov_diag.squeeze(idx))
+
+
 cov_param_dict = {
     'dense': DenseNormal,
     'diagonal': Normal,
-    # 'lowrank': LowRankCovariance
+    'lowrank': LowRankNormal
 }
