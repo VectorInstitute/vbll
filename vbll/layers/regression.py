@@ -35,7 +35,7 @@ class Regression(nn.Module):
     regularization_weight : float
         Weight on regularization term in ELBO
     parameterization : str
-        Parameterization of covariance matrix. Currently supports 'dense' and 'diagonal'
+        Parameterization of covariance matrix. Currently supports {'dense', 'diagonal', 'lowrank'}
     prior_scale : float
         Scale of prior covariance matrix
     wishart_scale : float
