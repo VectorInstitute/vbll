@@ -36,7 +36,7 @@ class DiscClassification(nn.Module):
         regularization_weight : float
             Weight on regularization term in ELBO
         parameterization : str
-            Parameterization of covariance matrix. Currently supports 'dense' and 'diagonal'
+            Parameterization of covariance matrix. Currently supports {'dense', 'diagonal', 'lowrank'}
         softmax_bound : str
             Bound to use for softmax. Currently supports 'jensen'
         return_ood : bool
