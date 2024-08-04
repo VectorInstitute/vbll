@@ -50,6 +50,7 @@ class Regression(nn.Module):
                  parameterization='dense',
                  prior_scale=1.,
                  wishart_scale=1e-2,
+                 cov_rank=None,
                  dof=1.):
         super(Regression, self).__init__()
 
@@ -67,25 +68,27 @@ class Regression(nn.Module):
         # last layer distribution
         self.W_dist = get_parameterization(parameterization)
         self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
+
         self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
         if parameterization == 'dense':
-          self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features)
-
-    def noise_chol(self):
-      return torch.exp(self.noise_logdiag)
-
-    def W_chol(self):
-      out = torch.exp(self.W_logdiag)
-      if self.W_dist == DenseNormal:
-        out = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(out)
-
-      return out
+            self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features)
+        elif parameterization == 'lowrank':
+            self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, cov_rank)/in_features)
 
     def W(self):
-      return self.W_dist(self.W_mean, self.W_chol())
+        cov_diag = torch.exp(self.W_logdiag)
+        if self.W_dist == Normal:
+            cov = self.W_dist(self.W_mean, cov_diag)
+        elif self.W_dist == DenseNormal:
+            tril = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
+            cov = self.W_dist(self.W_mean, tril)
+        elif self.W_dist == LowRankNormal:
+            cov = self.W_dist(self.W_mean, self.W_offdiag, cov_diag)
+
+        return cov
 
     def noise(self):
-      return Normal(self.noise_mean, self.noise_chol())
+        return Normal(self.noise_mean, torch.exp(self.noise_logdiag))
 
     def forward(self, x):
         out = VBLLReturn(self.predictive(x),
