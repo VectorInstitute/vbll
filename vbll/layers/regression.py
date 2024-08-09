@@ -121,6 +121,7 @@ class Regression(nn.Module):
     def _get_val_loss_fn(self, x):
         def loss_fn(y):
             # compute log likelihood under variational posterior via marginalization
-            return -torch.mean(self.predictive(x).log_prob(y))
+            logprob = self.predictive(x).log_prob(y).sum(-1) # sum over output dims            
+            return -logprob.mean(0) # mean over batch dim
 
         return loss_fn
