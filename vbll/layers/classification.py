@@ -7,7 +7,7 @@ from collections.abc import Callable
 import abc
 import warnings
 
-from vbll.utils.distributions import Normal, DenseNormal, get_parameterization
+from vbll.utils.distributions import Normal, DenseNormal, LowRankNormal, get_parameterization
 
 def KL(p, q_scale):
     feat_dim = p.mean.shape[-1]
