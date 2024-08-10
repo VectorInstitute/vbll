@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from dataclasses import dataclass
-from vbll.utils.distributions import Normal, DenseNormal, get_parameterization
+from vbll.utils.distributions import Normal, DenseNormal, LowRankNormal, get_parameterization
 from collections.abc import Callable
 import torch.nn as nn
 
