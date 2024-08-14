@@ -9,13 +9,31 @@ import warnings
 
 from vbll.utils.distributions import Normal, DenseNormal, LowRankNormal, get_parameterization
 
-def KL(p, q_scale):
+def gaussian_kl(p, q_scale):
     feat_dim = p.mean.shape[-1]
     mse_term = (p.mean ** 2).sum(-1).sum(-1) / q_scale
     trace_term = (p.trace_covariance / q_scale).sum(-1)
     logdet_term = (feat_dim * np.log(q_scale) - p.logdet_covariance).sum(-1)
 
     return 0.5*(mse_term + trace_term + logdet_term) # currently exclude constant
+
+
+def gamma_kl(cov_dist, prior_dist):
+    kl = torch.distributions.kl.kl_divergence(cov_dist, prior_dist)
+    return (kl).sum(-1)
+
+
+def expected_gaussian_kl(p, q_scale, cov_dist):
+    cov_factor = cov_dist.concentration / cov_dist.rate
+
+    feat_dim = p.mean.shape[-1]
+    mse_term = (p.mean ** 2).sum(-1)/ q_scale
+    combined_mse_term = (cov_factor * mse_term).sum(-1)
+    trace_term = (p.trace_covariance / q_scale).sum(-1)
+    logdet_term = (feat_dim * np.log(q_scale) - p.logdet_covariance).sum(-1)
+
+    return 0.5*(combined_mse_term + trace_term + logdet_term) # currently exclude constant
+
 
 @dataclass
 class VBLLReturn():
@@ -47,6 +65,8 @@ class DiscClassification(nn.Module):
             Scale of Wishart prior on noise covariance
         dof : float
             Degrees of freedom of Wishart prior on noise covariance
+        cov_rank : int
+            Rank of low-rank correction used in the LowRankNormal covariance parameterization.
      """
     def __init__(self,
                  in_features,
@@ -57,8 +77,8 @@ class DiscClassification(nn.Module):
                  return_ood=False,
                  prior_scale=1.,
                  wishart_scale=1.,
-                 cov_rank=None,
-                 dof=1.):
+                 dof=1.,
+                 cov_rank=None):
         super(DiscClassification, self).__init__()
 
         self.wishart_scale = wishart_scale
@@ -84,6 +104,8 @@ class DiscClassification(nn.Module):
         
         if softmax_bound == 'jensen':
             self.softmax_bound = self.jensen_bound
+        else:
+            raise NotImplementedError('Only semi-Monte Carlo is currently implemented.')
 
         self.return_ood = return_ood
 
@@ -142,7 +164,7 @@ class DiscClassification(nn.Module):
         def loss_fn(y):
             noise = self.noise()
 
-            kl_term = KL(self.W(), self.prior_scale)
+            kl_term = gaussian_kl(self.W(), self.prior_scale)
             wishart_term = (self.dof * noise.logdet_precision - 0.5 * self.wishart_scale * noise.trace_precision)
 
             total_elbo = torch.mean(self.softmax_bound(x, y))
@@ -161,6 +183,156 @@ class DiscClassification(nn.Module):
 
     def max_predictive(self, x):
         return torch.max(self.predictive(x), dim=-1)[0]
+
+
+class tDiscClassification(nn.Module):
+    """
+    Variational Bayesian t-Classification
+
+    This version of the VBLL Classification layer also performs variational inference for the noise covariance.
+
+    Parameters
+    ----------
+    in_features : int
+        Number of input features
+    out_features : int
+        Number of output features
+    regularization_weight : float
+        Weight on regularization term in ELBO
+    parameterization : str
+        Parameterization of covariance matrix. Currently supports {'dense', 'diagonal', 'lowrank'}
+    softmax_bound : str
+        Bound to use for softmax. Currently supports 'semimontecarlo'
+    prior_scale : float
+        Scale of prior covariance matrix
+    wishart_scale : float
+        Scale of Wishart prior on noise covariance
+    dof : float
+        Degrees of freedom of Wishart prior on noise covariance
+    cov_rank : int
+        Rank of low-rank correction used in the LowRankNormal covariance parameterization.
+    """
+    def __init__(self,
+                 in_features,
+                 out_features,
+                 regularization_weight,
+                 parameterization='dense',
+                 softmax_bound='semimontecarlo',
+                 return_ood=False,
+                 prior_scale=1.,
+                 wishart_scale=1.,
+                 dof=1.,
+                 cov_rank=None,
+                 ):
+
+        super(tDiscClassification, self).__init__()
+
+        self.wishart_scale = wishart_scale
+        self.regularization_weight = regularization_weight
+
+        # define prior, currently fixing zero mean and arbitrarily scaled cov
+        self.prior_dof = dof
+        self.prior_rate = 1./wishart_scale
+        self.prior_scale = prior_scale
+
+        # variational posterior over noise params
+        self.noise_log_dof = nn.Parameter(torch.ones(out_features) * np.log(self.prior_dof))
+        self.noise_log_rate = nn.Parameter(torch.ones(out_features) * np.log(self.prior_rate))
+
+        # last layer distribution
+        self.W_dist = get_parameterization(parameterization)
+        self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
+
+        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features))
+        if parameterization == 'dense':
+            self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features))
+
+        elif parameterization == 'lowrank':
+            self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, cov_rank))
+
+        if softmax_bound == 'jensen':
+            self.softmax_bound = self.semimontecarlo_bound
+        else:
+            raise NotImplementedError('Only semi-Monte Carlo is currently implemented.')
+            
+        self.return_ood = return_ood
+
+    @property
+    def W(self):
+        cov_diag = torch.exp(self.W_logdiag)
+        if self.W_dist == Normal:
+            cov = self.W_dist(self.W_mean, cov_diag)
+        elif self.W_dist == DenseNormal:
+            tril = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
+            cov = self.W_dist(self.W_mean, tril)
+        elif self.W_dist == LowRankNormal:
+            cov = self.W_dist(self.W_mean, self.W_offdiag, cov_diag)
+
+        return cov
+
+    @property
+    def noise(self):
+        noise_dof = torch.exp(self.noise_log_dof)
+        noise_rate = torch.exp(self.noise_log_rate)
+        return torch.distributions.gamma.Gamma(noise_dof, noise_rate)
+
+    @property
+    def noise_prior(self):
+        return torch.distributions.gamma.Gamma(self.prior_dof, self.prior_rate)
+
+    # ----- bounds
+
+    def semimontecarlo_bound(self, x, y, n_samples=1):
+        # Samples from inverse gamma distribution
+        pred = self.logit_predictive(x)
+        linear_term = pred.mean[torch.arange(x.shape[0]), y]
+        pre_lse_term = pred.mean + 0.5 * pred.covariance_diagonal
+        lse_term = torch.logsumexp(pre_lse_term, dim=-1)
+        return linear_term - lse_term
+
+
+    def forward(self, x):
+        out = VBLLReturn(torch.distributions.Categorical(probs = self.predictive(x)),
+                          self._get_train_loss_fn(x),
+                          self._get_val_loss_fn(x))
+        if self.return_ood: out.ood_scores = self.max_predictive(x)
+        return out
+
+    def logit_predictive(self, x):
+        # sample noise covariance, currently only doing 1 sample
+        cov_sample = 1./self.noise.rsample(sample_shape=torch.Size([x.shape[0]]))
+        Wx = (self.W @ x[..., None]).squeeze(-1)
+        mean = Wx.mean
+        pred_cov = (Wx.variance + 1) * cov_sample
+        return Normal(mean, torch.sqrt(pred_cov))
+        
+    def predictive(self, x, n_samples = 10):
+        softmax_samples = F.softmax(self.logit_predictive(x).rsample(sample_shape=torch.Size([n_samples])), dim=-1)
+        return torch.clip(torch.mean(softmax_samples, dim=0),min=0.,max=1.)
+
+    def _get_train_loss_fn(self, x):
+
+        def loss_fn(y):
+            kl_term = gamma_kl(self.noise, self.noise_prior)
+            kl_term += expected_gaussian_kl(self.W, self.prior_scale, self.noise)
+
+            total_elbo = torch.mean(self.softmax_bound(x, y))
+            total_elbo -= self.regularization_weight * kl_term
+            return -total_elbo
+
+        return loss_fn
+
+    def _get_val_loss_fn(self, x):
+        def loss_fn(y):
+            return -torch.mean(torch.log(self.predictive(x)[torch.arange(x.shape[0]), y]))
+
+        return loss_fn
+
+    # ----- OOD metrics
+
+    def max_predictive(self, x):
+        return torch.max(self.predictive(x), dim=-1)[0]
+
 
 class GenClassification(nn.Module):
     """Variational Bayesian Generative Classification
@@ -276,7 +448,7 @@ class GenClassification(nn.Module):
 
         def loss_fn(y):
             noise = self.noise()
-            kl_term = KL(self.mu(), self.prior_scale)
+            kl_term = gaussian_kl(self.mu(), self.prior_scale)
             wishart_term = (self.dof * noise.logdet_precision - 0.5 * self.wishart_scale * noise.trace_precision)
 
             total_elbo = torch.mean(self.softmax_bound(x, y))
