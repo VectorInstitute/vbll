@@ -1,2 +1,2 @@
-from .classification import GenClassification, DiscClassification
-from .regression import Regression
+from .classification import GenClassification, DiscClassification, tDiscClassification
+from .regression import Regression, tRegression
