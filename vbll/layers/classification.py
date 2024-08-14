@@ -250,7 +250,7 @@ class tDiscClassification(nn.Module):
         elif parameterization == 'lowrank':
             self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, cov_rank))
 
-        if softmax_bound == 'jensen':
+        if softmax_bound == 'semimontecarlo':
             self.softmax_bound = self.semimontecarlo_bound
         else:
             raise NotImplementedError('Only semi-Monte Carlo is currently implemented.')
