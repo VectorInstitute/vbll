@@ -77,7 +77,7 @@ class Regression(nn.Module):
         self.regularization_weight = regularization_weight
 
         # define prior, currently fixing zero mean and arbitrarily scaled cov
-        self.prior_scale = prior_scale
+        self.prior_scale = prior_scale * (2. / in_features) # kaiming init
 
         # noise distribution
         self.noise_mean = nn.Parameter(torch.zeros(out_features), requires_grad = False)
@@ -186,7 +186,7 @@ class tRegression(nn.Module):
         # define prior, currently fixing zero mean and arbitrarily scaled cov
         self.prior_dof = dof
         self.prior_rate = 1./wishart_scale
-        self.prior_scale = prior_scale
+        self.prior_scale = prior_scale * (2. / in_features) # kaiming init
 
         # variational posterior over noise params
         self.noise_log_dof = nn.Parameter(torch.ones(out_features) * np.log(self.prior_dof))
