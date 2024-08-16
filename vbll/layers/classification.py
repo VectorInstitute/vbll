@@ -78,7 +78,7 @@ class DiscClassification(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1.,
                  dof=1.,
-                 cov_rank=None):
+                 cov_rank=3):
         super(DiscClassification, self).__init__()
 
         self.wishart_scale = wishart_scale
@@ -155,7 +155,7 @@ class DiscClassification(nn.Module):
     def logit_predictive(self, x):
         return (self.W() @ x[..., None]).squeeze(-1) + self.noise()
 
-    def predictive(self, x, n_samples = 10):
+    def predictive(self, x, n_samples = 20):
         softmax_samples = F.softmax(self.logit_predictive(x).rsample(sample_shape=torch.Size([n_samples])), dim=-1)
         return torch.clip(torch.mean(softmax_samples, dim=0),min=0.,max=1.)
 
@@ -222,7 +222,7 @@ class tDiscClassification(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1.,
                  dof=1.,
-                 cov_rank=None,
+                 cov_rank=3,
                  ):
 
         super(tDiscClassification, self).__init__()
@@ -306,7 +306,7 @@ class tDiscClassification(nn.Module):
         pred_cov = (Wx.variance + 1) * cov_sample
         return Normal(mean, torch.sqrt(pred_cov))
         
-    def predictive(self, x, n_samples = 10):
+    def predictive(self, x, n_samples = 20):
         softmax_samples = F.softmax(self.logit_predictive(x).rsample(sample_shape=torch.Size([n_samples])), dim=-1)
         return torch.clip(torch.mean(softmax_samples, dim=0),min=0.,max=1.)
 
