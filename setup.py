@@ -3,7 +3,7 @@ import os, sys
 
 setup(
     name="vbll",
-    version="0.2.1",
+    version="0.2.2",
     packages=find_packages(),
     install_requires=["torch"],
 )
