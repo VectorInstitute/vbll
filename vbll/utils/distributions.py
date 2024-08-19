@@ -110,7 +110,7 @@ class DenseNormal(torch.distributions.MultivariateNormal):
     @property
     def inverse_covariance(self):
         warnings.warn("Direct matrix inverse for dense covariances is O(N^3), consider using eg inverse weighted inner product")
-        return tp(torch.linalg.inv(self.scale_tril)) @ self.scale_tril
+        return tp(torch.linalg.inv(self.scale_tril)) @ torch.linalg.inv(self.scale_tril)
 
     @property
     def logdet_covariance(self):
