@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 from dataclasses import dataclass
-from vbll.utils.distributions import Normal, DenseNormal, LowRankNormal, get_parameterization
+from vbll.utils.distributions import Normal, DenseNormal, LowRankNormal, DenseNormalPrec, get_parameterization
 from collections.abc import Callable
 import torch.nn as nn
 
@@ -103,7 +103,7 @@ class Regression(nn.Module):
         cov_diag = torch.exp(self.W_logdiag)
         if self.W_dist == Normal:
             cov = self.W_dist(self.W_mean, cov_diag)
-        elif (self.W_dist == DenseNormal) or (self.W_dist == DenseNormalPrecision):
+        elif (self.W_dist == DenseNormal) or (self.W_dist == DenseNormalPrec):
             tril = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
             cov = self.W_dist(self.W_mean, tril)
         elif self.W_dist == LowRankNormal:
