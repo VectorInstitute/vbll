@@ -53,7 +53,7 @@ class Regression(nn.Module):
     regularization_weight : float
         Weight on regularization term in ELBO
     parameterization : str
-        Parameterization of covariance matrix. Currently supports {'dense', 'diagonal', 'lowrank'}
+        Parameterization of covariance matrix. Currently supports {'dense', 'diagonal', 'lowrank', 'dense_precision'}
     prior_scale : float
         Scale of prior covariance matrix
     wishart_scale : float
@@ -77,27 +77,33 @@ class Regression(nn.Module):
         self.regularization_weight = regularization_weight
 
         # define prior, currently fixing zero mean and arbitrarily scaled cov
-        self.prior_scale = prior_scale * (2. / in_features) # kaiming init
+        self.prior_scale = prior_scale * (1. / in_features) 
 
         # noise distribution
         self.noise_mean = nn.Parameter(torch.zeros(out_features), requires_grad = False)
-        self.noise_logdiag = nn.Parameter(torch.randn(out_features) - 1)
+        self.noise_logdiag = nn.Parameter(torch.randn(out_features) * (np.log(wishart_scale)))
 
         # last layer distribution
         self.W_dist = get_parameterization(parameterization)
         self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
-
-        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
-        if parameterization == 'dense':
+        
+        if parameterization == 'diagonal':
+            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
+        elif parameterization == 'dense':
+            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
             self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features)
+        elif parameterization == 'dense_precision':
+            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) + 0.5 * np.log(in_features))
+            self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)*0.0)
         elif parameterization == 'lowrank':
+            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
             self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, cov_rank)/in_features)
 
     def W(self):
         cov_diag = torch.exp(self.W_logdiag)
         if self.W_dist == Normal:
             cov = self.W_dist(self.W_mean, cov_diag)
-        elif self.W_dist == DenseNormal:
+        elif (self.W_dist == DenseNormal) or (self.W_dist == DenseNormalPrecision):
             tril = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
             cov = self.W_dist(self.W_mean, tril)
         elif self.W_dist == LowRankNormal:
@@ -199,9 +205,11 @@ class tRegression(nn.Module):
         self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features))
         if parameterization == 'dense':
             self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features))
-
         elif parameterization == 'lowrank':
             self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, cov_rank))
+        elif parameterization == 'dense_precision':
+            raise NotImplementedError()
+            
 
     @property
     def W(self):
