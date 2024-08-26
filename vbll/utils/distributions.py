@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from collections.abc import Callable
 import abc
 import warnings
+import fannypack.utils as fu
 
 def get_parameterization(p):
   if p in cov_param_dict:
@@ -139,6 +140,80 @@ class DenseNormal(torch.distributions.MultivariateNormal):
     def squeeze(self, idx):
         return DenseNormal(self.loc.squeeze(idx), self.scale_tril.squeeze(idx))
 
+class DenseNormalPrec(torch.distributions.MultivariateNormal):
+    """A DenseNormal parameterized by the mean and the cholesky decomp of the precision matrix.
+
+    This function also includes a recursive_update function which performs a recursive 
+    linear regression update with effecient cholesky factor updates. 
+    """
+    def __init__(self, loc, cholesky, validate_args=False):
+        prec = cholesky @ tp(cholesky)
+        super(DenseNormalPrec, self).__init__(loc, precision_matrix=prec, validate_args=validate_args)
+        self.tril = cholesky
+
+    @property
+    def mean(self):
+        return self.loc
+
+    @property
+    def chol_covariance(self):
+        raise NotImplementedError()
+
+    @property
+    def covariance(self):
+        warnings.warn("Direct matrix inverse for dense covariances is O(N^3), consider using eg inverse weighted inner product")
+        # TODO replace with cholesky_inverse
+        return fu.cholesky_inverse(self.tril)
+
+    @property
+    def inverse_covariance(self):
+        return self.precision_matrix
+
+    @property
+    def logdet_covariance(self):
+        return -2. * torch.diagonal(self.scale_tril, dim1=-2, dim2=-1).log().sum(-1)
+
+    @property
+    def trace_covariance(self):
+        return (torch.inverse(self.tril)**2).sum(-1).sum(-1) # compute as frob norm squared
+
+    def covariance_weighted_inner_prod(self, b, reduce_dim=True):
+        assert b.shape[-1] == 1
+        prod = (torch.linalg.solve(self.tril, b)**2).sum(-2)
+        return prod.squeeze(-1) if reduce_dim else prod
+
+    def precision_weighted_inner_prod(self, b, reduce_dim=True):
+        assert b.shape[-1] == 1
+        prod = ((tp(self.tril) @ b)**2).sum(-2)
+        return prod.squeeze(-1) if reduce_dim else prod
+
+    def __matmul__(self, inp):
+        assert inp.shape[-2] == self.loc.shape[-1]
+        assert inp.shape[-1] == 1
+        new_cov = self.covariance_weighted_inner_prod(inp.unsqueeze(-3), reduce_dim = False)
+        return Normal(self.loc @ inp, torch.sqrt(torch.clip(new_cov, min = 1e-12)))
+
+    def squeeze(self, idx):
+        return DenseNormalPrecision(self.loc.squeeze(idx), self.tril.squeeze(idx))
+
+    def recursive_update(self, X, y, noise_cov):
+        noise_cov = noise_cov.unsqueeze(-1)
+        prec = self.inverse_covariance # out_dim * feat_dim * feat_dim
+        chol = self.tril
+
+        XTy =  (tp(y) @ X) / noise_cov # out_dim * feat_dim
+
+        # recursively update cholesky
+        for i in range(X.shape[0]):
+            x = X[i].unsqueeze(-2) / torch.sqrt(noise_cov) # out_dim * feat_dim
+            chol = fu.cholupdate(chol, x)
+
+        cov_update = (prec @ self.loc.unsqueeze(-1)) # out_dim * feat dim * 1
+        cov_update += XTy.unsqueeze(-1) # out_dim * feat dim * 1
+        new_loc = (fu.cholesky_inverse(chol) @ cov_update).squeeze(-1) # out_dim * feat dim
+        
+        return chol, new_loc
+
 
 class LowRankNormal(torch.distributions.LowRankMultivariateNormal):
     def __init__(self, loc, cov_factor, diag):
@@ -198,6 +273,7 @@ class LowRankNormal(torch.distributions.LowRankMultivariateNormal):
 
 cov_param_dict = {
     'dense': DenseNormal,
+    'dense_precision': DenseNormalPrec,
     'diagonal': Normal,
     'lowrank': LowRankNormal
 }
