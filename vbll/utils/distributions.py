@@ -171,7 +171,7 @@ class DenseNormalPrec(torch.distributions.MultivariateNormal):
 
     @property
     def logdet_covariance(self):
-        return -2. * torch.diagonal(self.scale_tril, dim1=-2, dim2=-1).log().sum(-1)
+        return -2. * torch.diagonal(self.tril, dim1=-2, dim2=-1).log().sum(-1)
 
     @property
     def trace_covariance(self):
