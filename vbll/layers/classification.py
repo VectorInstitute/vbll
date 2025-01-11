@@ -252,8 +252,10 @@ class tDiscClassification(nn.Module):
 
         if softmax_bound == 'semimontecarlo':
             self.softmax_bound = self.semimontecarlo_bound
+        elif softmax_bound == 'reduced_kn':
+            self.softmax_bound = self.reduced_kn
         else:
-            raise NotImplementedError('Only semi-Monte Carlo is currently implemented.')
+            raise NotImplementedError('Only semi-Monte Carlo and reduced_kn are currently implemented.')
             
         self.return_ood = return_ood
 
@@ -290,7 +292,15 @@ class tDiscClassification(nn.Module):
         lse_term = torch.logsumexp(pre_lse_term, dim=-1)
         return linear_term - lse_term
 
-
+    def reduced_kn(self, x, y):
+        # Uses the Knowles-Minka bound with alpha = 1/2
+        # https://tminka.github.io/papers/knowles-minka-nips2011.pdf
+        Wx = (self.W @ x[..., None]).squeeze(-1)
+        log_softmax_term = F.log_softmax(Wx.mean, dim=-1)[torch.arange(x.shape[0]), y]
+        exp_cov = torch.exp(self.noise_log_rate - self.noise_log_dof)
+        cov = (Wx.variance + 1) * exp_cov
+        return log_softmax_term - (1/8) * cov.sum(-1)
+        
     def forward(self, x):
         out = VBLLReturn(torch.distributions.Categorical(probs = self.predictive(x)),
                           self._get_train_loss_fn(x),
