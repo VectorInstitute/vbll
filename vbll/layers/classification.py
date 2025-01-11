@@ -217,7 +217,7 @@ class tDiscClassification(nn.Module):
                  out_features,
                  regularization_weight,
                  parameterization='dense',
-                 softmax_bound='semimontecarlo',
+                 softmax_bound='reduced_kn',
                  return_ood=False,
                  prior_scale=1.,
                  wishart_scale=1.,
