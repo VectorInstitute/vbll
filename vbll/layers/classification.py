@@ -23,9 +23,7 @@ def gamma_kl(cov_dist, prior_dist):
     return (kl).sum(-1)
 
 
-def expected_gaussian_kl(p, q_scale, cov_dist):
-    cov_factor = cov_dist.concentration / cov_dist.rate
-
+def expected_gaussian_kl(p, q_scale, cov_factor):
     feat_dim = p.mean.shape[-1]
     mse_term = (p.mean ** 2).sum(-1)/ q_scale
     combined_mse_term = (cov_factor * mse_term).sum(-1)
@@ -324,7 +322,8 @@ class tDiscClassification(nn.Module):
 
         def loss_fn(y):
             kl_term = gamma_kl(self.noise, self.noise_prior)
-            kl_term += expected_gaussian_kl(self.W, self.prior_scale, self.noise)
+            cov_factor = self.noise.concentration / self.noise.rate
+            kl_term += expected_gaussian_kl(self.W, self.prior_scale, cov_factor)
 
             total_elbo = torch.mean(self.softmax_bound(x, y))
             total_elbo -= self.regularization_weight * kl_term
