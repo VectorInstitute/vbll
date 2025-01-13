@@ -343,6 +343,167 @@ class tDiscClassification(nn.Module):
         return torch.max(self.predictive(x), dim=-1)[0]
 
 
+class HetClassification(nn.Module):
+    """
+    Heteroscedastic Variational Bayesian Classification
+
+    Parameters
+    ----------
+    in_features : int
+        Number of input features
+    out_features : int
+        Number of output features
+    regularization_weight : float
+        Weight on regularization term in ELBO
+    parameterization : str
+        Parameterization of covariance matrix. Currently supports {'dense', 'diagonal', 'lowrank'}
+    softmax_bound : str
+        Bound to use for softmax. Currently supports 'semimontecarlo'
+    prior_scale : float
+        Scale of prior covariance matrix/initialization
+    prior_scale : float
+        Scale of noise prior covariance matrix/initalization
+    cov_rank : int
+        Rank of low-rank correction used in the LowRankNormal covariance parameterization.
+    """
+    def __init__(self,
+                 in_features,
+                 out_features,
+                 regularization_weight,
+                 parameterization='dense',
+                 softmax_bound='jensen',
+                 return_ood=False,
+                 prior_scale=1.,
+                 noise_prior_scale=0.01,
+                 cov_rank=None):
+        super(HetClassification, self).__init__()
+
+        self.regularization_weight = regularization_weight
+
+        # define prior, currently fixing zero mean and arbitrarily scaled cov
+        self.prior_scale = prior_scale * (1. / in_features)
+        self.noise_prior_scale = noise_prior_scale * (1. / in_features)
+
+        # noise distribution
+        self.noise_mean = nn.Parameter(torch.zeros(out_features), requires_grad = False)
+
+        # last layer distribution
+        self.W_dist = get_parameterization(parameterization)
+        self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
+
+        self.M_dist = get_parameterization(parameterization) # currently, use same parameterization
+        self.M_mean = nn.Parameter(torch.randn(out_features, in_features))
+
+        if parameterization == 'diagonal':
+            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
+            self.M_logdiag = nn.Parameter(torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
+
+        elif parameterization == 'dense':
+            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
+            self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features)
+
+            self.M_logdiag = nn.Parameter(torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
+            self.M_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features + 0.5 * np.log(noise_prior_scale))
+
+        elif parameterization == 'dense_precision':
+            raise NotImplementedError()
+            
+        elif parameterization == 'lowrank':
+            raise NotImplementedError()
+            
+        else:
+            raise ValueError('Invalid cov parameterization')
+
+        if softmax_bound == 'jensen':
+            self.softmax_bound = self.jensen_bound
+        else:
+            raise NotImplementedError('Only Jensen bound is currently implemented.')
+
+        self.return_ood = return_ood
+
+
+    def M(self):
+        cov_diag = torch.exp(self.M_logdiag)
+        if self.M_dist == Normal:
+            cov = self.M_dist(self.M_mean, cov_diag)
+        elif (self.M_dist == DenseNormal) or (self.M_dist == DenseNormalPrec):
+            tril = torch.tril(self.M_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
+            cov = self.M_dist(self.M_mean, tril)
+
+        return cov
+
+    def W(self):
+        cov_diag = torch.exp(self.W_logdiag)
+        if self.W_dist == Normal:
+            cov = self.W_dist(self.W_mean, cov_diag)
+        elif (self.W_dist == DenseNormal) or (self.W_dist == DenseNormalPrec):
+            tril = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
+            cov = self.W_dist(self.W_mean, tril)
+        return cov
+
+    def log_noise(self, x, M):
+        return (M @ x[..., None]).squeeze(-1)
+
+    # ----- bounds
+    def jensen_bound(self, x, y):
+        pred = self.logit_predictive(x)
+        linear_term = pred.mean[torch.arange(x.shape[0]), y]
+        pre_lse_term = pred.mean + 0.5 * pred.covariance_diagonal
+        lse_term = torch.logsumexp(pre_lse_term, dim=-1)
+        return linear_term - lse_term
+
+    def forward(self, x):
+        # need to return sampling-based output
+        out = VBLLReturn(torch.distributions.Categorical(probs = self.predictive(x)),
+                         self._get_train_loss_fn(x),
+                         self._get_val_loss_fn(x))
+        if self.return_ood: out.ood_scores = self.max_predictive(x)
+        return out
+
+    def logit_predictive(self, x):
+        # sample noise (single sample)
+        M = self.M().rsample()
+        sigma2 = torch.exp(self.log_noise(x,M))
+        Wx = (self.W() @ x[..., None]).squeeze(-1)
+        mean = Wx.mean
+        stdev = torch.sqrt((Wx.variance + 1) * sigma2)
+        return Normal(mean, stdev)
+
+    def predictive(self, x, n_samples = 20):
+        softmax_samples = F.softmax(self.logit_predictive(x).rsample(sample_shape=torch.Size([n_samples])), dim=-1)
+        return torch.clip(torch.mean(softmax_samples, dim=0),min=0.,max=1.)
+
+    def _get_train_loss_fn(self, x):
+
+        def loss_fn(y):
+            W = self.W()
+            M = self.M()
+            log_noise_cov = self.log_noise(x, M)
+
+            # compute expected KL
+            expect_sigma_inv = torch.exp(-log_noise_cov.mean + 0.5 * log_noise_cov.scale ** 2)
+            kl_term_ll = torch.mean(expected_gaussian_kl(W, self.prior_scale, expect_sigma_inv))
+            kl_term_noise = gaussian_kl(self.M(), self.noise_prior_scale)
+
+            total_elbo = torch.mean(self.softmax_bound(x, y))
+            total_elbo -= self.regularization_weight * (kl_term_noise + kl_term_ll)
+
+            return -total_elbo
+
+        return loss_fn
+
+    def _get_val_loss_fn(self, x):
+        def loss_fn(y):
+            return -torch.mean(torch.log(self.predictive(x)[torch.arange(x.shape[0]), y]))
+
+        return loss_fn
+
+    # ----- OOD metrics
+
+    def max_predictive(self, x):
+        return torch.max(self.predictive(x), dim=-1)[0]
+        
+
 class GenClassification(nn.Module):
     """Variational Bayesian Generative Classification
 
