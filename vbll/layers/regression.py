@@ -20,9 +20,7 @@ def gamma_kl(cov_dist, prior_dist):
     return (kl).sum(-1)
 
 
-def expected_gaussian_kl(p, q_scale, cov_dist):
-    cov_factor = cov_dist.concentration / cov_dist.rate
-
+def expected_gaussian_kl(p, q_scale, cov_factor):
     feat_dim = p.mean.shape[-1]
     mse_term = (p.mean ** 2).sum(-1)/ q_scale
     trace_term = (p.trace_covariance / q_scale).sum(-1)
@@ -251,13 +249,14 @@ class tRegression(nn.Module):
 
         def loss_fn(y):
             cov_factor = self.noise.concentration / self.noise.rate
+
             pred_err = (y - (self.W.mean @ x[...,None]).squeeze(-1)) ** 2
             pred_likelihood = (cov_factor * pred_err).sum(-1)
 
             logdet_term = (torch.digamma(self.noise.concentration) - torch.log(self.noise.rate)).sum(-1)
             trace_term = (self.W.covariance_weighted_inner_prod(x.unsqueeze(-2)[..., None])).sum(-1)
 
-            kl_term = expected_gaussian_kl(self.W, self.prior_scale, self.noise)
+            kl_term = expected_gaussian_kl(self.W, self.prior_scale, cov_factor)
             kl_term += gamma_kl(self.noise, self.noise_prior)
 
             total_elbo = -0.5 * torch.mean(pred_likelihood + trace_term - logdet_term)
@@ -271,5 +270,144 @@ class tRegression(nn.Module):
             # compute log likelihood under variational posterior via marginalization
             logprob = self.predictive(x).log_prob(y).sum(-1) # sum over output dims
             return -logprob.mean(0) # mean over batch dim
+
+        return loss_fn
+
+
+class HetRegression(nn.Module):
+    """
+    Heteroscedastic Variational Bayesian Linear Regression
+
+    Parameters
+    ----------
+    in_features : int
+        Number of input features
+    out_features : int
+        Number of output features
+    regularization_weight : float
+        Weight on regularization term in ELBO
+    parameterization : str
+        Parameterization of covariance matrix. Currently supports {'dense', 'diagonal'}
+    prior_scale : float
+        Scale of prior covariance matrix
+    noise_prior_scale : float
+        Scale of prior/init for the noise covariance VBLL
+    """
+    def __init__(self,
+                 in_features,
+                 out_features,
+                 regularization_weight,
+                 parameterization='dense',
+                 prior_scale=1.,
+                 noise_prior_scale=0.01):
+        super(HetRegression, self).__init__()
+
+        self.regularization_weight = regularization_weight
+
+        # define prior, currently fixing zero mean and arbitrarily scaled cov
+        self.prior_scale = prior_scale * (1. / in_features)
+        self.noise_prior_scale = noise_prior_scale * (1. / in_features)
+
+        # noise distribution
+        self.noise_mean = nn.Parameter(torch.zeros(out_features), requires_grad = False)
+
+        # last layer distribution
+        self.W_dist = get_parameterization(parameterization)
+        self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
+
+        self.M_dist = get_parameterization(parameterization) # currently, use same parameterization
+        self.M_mean = nn.Parameter(torch.randn(out_features, in_features))
+
+        if parameterization == 'diagonal':
+            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
+            self.M_logdiag = nn.Parameter(torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
+
+        elif parameterization == 'dense':
+            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
+            self.W_offdiag = nn.Parameter((1e-2) * torch.randn(out_features, in_features, in_features)/in_features)
+
+            self.M_logdiag = nn.Parameter(torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
+            self.M_offdiag = nn.Parameter((1e-2) * torch.randn(out_features, in_features, in_features)/in_features)
+        elif parameterization == 'dense_precision':
+            raise NotImplementedError()
+
+        elif parameterization == 'lowrank':
+            raise NotImplementedError()
+
+        else:
+            raise ValueError('Invalid cov parameterization')
+
+    def M(self):
+        cov_diag = torch.exp(self.M_logdiag)
+        if self.M_dist == Normal:
+            cov = self.M_dist(self.M_mean, cov_diag)
+        elif (self.M_dist == DenseNormal) or (self.M_dist == DenseNormalPrec):
+            tril = torch.tril(self.M_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
+            cov = self.M_dist(self.M_mean, tril)
+
+        return cov
+
+    def W(self):
+        cov_diag = torch.exp(self.W_logdiag)
+        if self.W_dist == Normal:
+            cov = self.W_dist(self.W_mean, cov_diag)
+        elif (self.W_dist == DenseNormal):
+            tril = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
+            cov = self.W_dist(self.W_mean, tril)
+
+        return cov
+
+    def log_noise(self, x, M):
+        return (M @ x[..., None]).squeeze(-1)
+
+    def forward(self, x):
+        # TODO: return mixture distribution as opposed to a single noise sample
+        out = VBLLReturn(self.predictive_sample(x),
+                         self._get_train_loss_fn(x),
+                         self._get_val_loss_fn(x))
+        return out
+
+    def predictive_sample(self, x):
+        M = self.M().rsample()
+        sigma2 = torch.exp(self.log_noise(x,M))
+        Wx = (self.W() @ x[..., None]).squeeze(-1)
+        mean = Wx.mean
+        cov = torch.sqrt((Wx.variance + 1) * sigma2)
+        return Normal(mean, cov)
+
+    def _get_train_loss_fn(self, x):
+        def loss_fn(y):
+            W = self.W()
+            M = self.M()
+            log_noise_cov = self.log_noise(x, M)
+            expect_sigma_inv = torch.exp(-log_noise_cov.mean + 0.5 * log_noise_cov.scale ** 2)
+            expect_log_sigma = log_noise_cov.mean
+
+            # compute pred density with expected Sigma terms
+            err = y - (W.mean @ x[...,None]).squeeze(-1)
+            mse_term = 0.5 * (err.pow(2) * expect_sigma_inv).sum(-1)
+            logdet_term = 0.5 * expect_log_sigma.sum(-1)
+            pred_likelihood = - mse_term - logdet_term
+
+            trace_term = 0.5 * ((W.covariance_weighted_inner_prod(x.unsqueeze(-2)[..., None])))
+            total_elbo = torch.mean(pred_likelihood - trace_term)
+
+            # compute expected KL
+            kl_term_ll = torch.mean(expected_gaussian_kl(W, self.prior_scale, expect_sigma_inv))
+            kl_term_noise = gaussian_kl(self.M(), self.noise_prior_scale)
+            total_elbo -= self.regularization_weight * (kl_term_noise + kl_term_ll)
+
+            return -total_elbo
+
+        return loss_fn
+
+    def _get_val_loss_fn(self, x, n_samples = 20):
+        def loss_fn(y):
+            # sample noise n times
+            # compute log likelihood under variational posterior via marginalization with sampled noise
+            running_loss = 0.
+            for i in range(n_samples):
+                running_loss += -torch.mean(self.predictive_sample(x).log_prob(y).sum(-1)) # sum over output dims
+            return running_loss / n_samples
 
         return loss_fn
