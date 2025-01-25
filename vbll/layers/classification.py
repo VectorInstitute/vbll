@@ -387,11 +387,12 @@ class HetClassification(nn.Module):
                  out_features,
                  regularization_weight,
                  parameterization='dense',
-                 softmax_bound='jensen',
+                 softmax_bound='reduced_kn',
                  return_ood=False,
                  prior_scale=1.,
                  noise_prior_scale=0.01,
-                 cov_rank=None):
+                 cov_rank=None,
+                 kn_alpha=None):
         super(HetClassification, self).__init__()
 
         self.regularization_weight = regularization_weight
@@ -409,50 +410,52 @@ class HetClassification(nn.Module):
 
         self.M_dist = get_parameterization(parameterization) # currently, use same parameterization
         self.M_mean = nn.Parameter(torch.randn(out_features, in_features))
+        
+        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
+        self.M_logdiag = nn.Parameter(torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
 
         if parameterization == 'diagonal':
-            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
-            self.M_logdiag = nn.Parameter(torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
-
+            pass
         elif parameterization == 'dense':
-            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
             self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features)
-
-            self.M_logdiag = nn.Parameter(torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
             self.M_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features + 0.5 * np.log(noise_prior_scale))
-
         elif parameterization == 'dense_precision':
-            raise NotImplementedError()
-            
+            raise NotImplementedError('dense_precision not implemented')
         elif parameterization == 'lowrank':
-            raise NotImplementedError()
-            
+            raise NotImplementedError('lowrank not implemented')
         else:
-            raise ValueError('Invalid cov parameterization')
+            raise ValueError('invalid parameterization')
 
-        if softmax_bound == 'jensen':
-            self.softmax_bound = self.jensen_bound
+        if softmax_bound == 'semimontecarlo':
+            self.softmax_bound = self.semimontecarlo_bound
+        elif softmax_bound == 'reduced_kn':
+            self.softmax_bound = self.reduced_kn
+            if kn_alpha is None:
+                self.alpha = nn.Parameter(0.1 * torch.randn(out_features))
+            else:
+                self.alpha = nn.Parameter(torch.ones(out_features) * kn_alpha, requires_grad=False)
         else:
-            raise NotImplementedError('Only Jensen bound is currently implemented.')
+            raise NotImplementedError('Only semi-Monte Carlo and reduced_kn are currently implemented.')
 
         self.return_ood = return_ood
 
-
+    @property
     def M(self):
         cov_diag = torch.exp(self.M_logdiag)
         if self.M_dist == Normal:
             cov = self.M_dist(self.M_mean, cov_diag)
-        elif (self.M_dist == DenseNormal) or (self.M_dist == DenseNormalPrec):
+        elif (self.M_dist == DenseNormal):
             tril = torch.tril(self.M_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
             cov = self.M_dist(self.M_mean, tril)
 
         return cov
 
+    @property
     def W(self):
         cov_diag = torch.exp(self.W_logdiag)
         if self.W_dist == Normal:
             cov = self.W_dist(self.W_mean, cov_diag)
-        elif (self.W_dist == DenseNormal) or (self.W_dist == DenseNormalPrec):
+        elif (self.W_dist == DenseNormal):
             tril = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
             cov = self.W_dist(self.W_mean, tril)
         return cov
@@ -461,12 +464,31 @@ class HetClassification(nn.Module):
         return (M @ x[..., None]).squeeze(-1)
 
     # ----- bounds
-    def jensen_bound(self, x, y):
+    def semimontecarlo_bound(self, x, y):
+        # samples noise within logit_predictive        
         pred = self.logit_predictive(x)
+
         linear_term = pred.mean[torch.arange(x.shape[0]), y]
         pre_lse_term = pred.mean + 0.5 * pred.covariance_diagonal
         lse_term = torch.logsumexp(pre_lse_term, dim=-1)
         return linear_term - lse_term
+
+    def reduced_kn(self, x, y):
+        # Uses the Knowles-Minka bound with alpha = 1/2 - alpha/Sigma
+        # https://tminka.github.io/papers/knowles-minka-nips2011.pdf
+        Wx = (self.W @ x[..., None]).squeeze(-1)
+        cov = (Wx.variance + 1)
+        linear_term = Wx.mean[torch.arange(x.shape[0]), y]
+
+        pre_lse_term = Wx.mean + self.alpha * cov
+        lse_term = torch.logsumexp(pre_lse_term, dim=-1)
+
+        log_noise_cov = self.log_noise(x, self.M)
+        exp_cov = torch.exp(log_noise_cov.mean + 0.5 * log_noise_cov.scale ** 2)
+        exp_prec = torch.exp(-log_noise_cov.mean + 0.5 * log_noise_cov.scale ** 2)
+
+        cov_term = cov * (exp_cov/4 + exp_prec * self.alpha ** 2 - self.alpha)
+        return linear_term - lse_term - 0.5 * cov_term.sum(-1)
 
     def forward(self, x):
         # need to return sampling-based output
@@ -478,9 +500,9 @@ class HetClassification(nn.Module):
 
     def logit_predictive(self, x):
         # sample noise (single sample)
-        M = self.M().rsample()
+        M = self.M.rsample()
         sigma2 = torch.exp(self.log_noise(x,M))
-        Wx = (self.W() @ x[..., None]).squeeze(-1)
+        Wx = (self.W @ x[..., None]).squeeze(-1)
         mean = Wx.mean
         stdev = torch.sqrt((Wx.variance + 1) * sigma2)
         return Normal(mean, stdev)
@@ -490,16 +512,13 @@ class HetClassification(nn.Module):
         return torch.clip(torch.mean(softmax_samples, dim=0),min=0.,max=1.)
 
     def _get_train_loss_fn(self, x):
-
         def loss_fn(y):
-            W = self.W()
-            M = self.M()
-            log_noise_cov = self.log_noise(x, M)
+            log_noise_cov = self.log_noise(x, self.M)
 
             # compute expected KL
             expect_sigma_inv = torch.exp(-log_noise_cov.mean + 0.5 * log_noise_cov.scale ** 2)
-            kl_term_ll = torch.mean(expected_gaussian_kl(W, self.prior_scale, expect_sigma_inv))
-            kl_term_noise = gaussian_kl(self.M(), self.noise_prior_scale)
+            kl_term_ll = torch.mean(expected_gaussian_kl(self.W, self.prior_scale, expect_sigma_inv))
+            kl_term_noise = gaussian_kl(self.M, self.noise_prior_scale)
 
             total_elbo = torch.mean(self.softmax_bound(x, y))
             total_elbo -= self.regularization_weight * (kl_term_noise + kl_term_ll)
