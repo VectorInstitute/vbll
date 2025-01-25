@@ -187,7 +187,7 @@ class tDiscClassification(nn.Module):
     """
     Variational Bayesian t-Classification
 
-    This version of the VBLL Classification layer also performs variational inference for the noise covariance.
+    This version of the VBLL Classification layer also infers noise covariance.
 
     Parameters
     ----------
@@ -198,7 +198,7 @@ class tDiscClassification(nn.Module):
     regularization_weight : float
         Weight on regularization term in ELBO
     parameterization : str
-        Parameterization of covariance matrix. Currently supports {'dense', 'diagonal', 'lowrank'}
+        Parameterization of covariance matrix. Currently supports {'dense', 'diagonal'}
     softmax_bound : str
         Bound to use for softmax. Currently supports 'semimontecarlo'
     prior_scale : float
@@ -220,7 +220,8 @@ class tDiscClassification(nn.Module):
                  prior_scale=1.,
                  wishart_scale=1.,
                  dof=1.,
-                 cov_rank=3,
+                 cov_rank=None,
+                 kn_alpha=None,
                  ):
 
         super(tDiscClassification, self).__init__()
@@ -231,7 +232,7 @@ class tDiscClassification(nn.Module):
         # define prior, currently fixing zero mean and arbitrarily scaled cov
         self.prior_dof = dof
         self.prior_rate = 1./wishart_scale
-        self.prior_scale = prior_scale * (2. / in_features) # kaiming init/width scaling
+        self.prior_scale = prior_scale * (2. / in_features) # kaiming init
 
         # variational posterior over noise params
         self.noise_log_dof = nn.Parameter(torch.ones(out_features) * np.log(self.prior_dof))
@@ -241,20 +242,29 @@ class tDiscClassification(nn.Module):
         self.W_dist = get_parameterization(parameterization)
         self.W_mean = nn.Parameter(torch.randn(out_features, in_features) * np.sqrt(2./in_features)) # kaiming init
 
-        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - np.log(in_features)) # make output dim invariant
-        if parameterization == 'dense':
-            self.W_offdiag = nn.Parameter(0.01 * torch.randn(out_features, in_features, in_features)) # init off dim elements small
-
+        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features)) # make output dim invariant
+        if parameterization == 'diagonal':
+            pass
+        elif parameterization == 'dense':
+            self.W_offdiag = nn.Parameter(0.01 * torch.randn(out_features, in_features, in_features))
+        elif parameterization == 'diagonal_natural':
+            raise NotImplementedError('diagonal_natural not implemented')
         elif parameterization == 'lowrank':
-            self.W_offdiag = nn.Parameter(0.01 * torch.randn(out_features, in_features, cov_rank)) # init off dim elements small
+            raise NotImplementedError('lowrank not implemented')
+        else:
+            raise ValueError('invalid parameterization')
 
         if softmax_bound == 'semimontecarlo':
             self.softmax_bound = self.semimontecarlo_bound
         elif softmax_bound == 'reduced_kn':
             self.softmax_bound = self.reduced_kn
+            if kn_alpha is None:
+                self.alpha = nn.Parameter(0.1 * torch.randn(out_features))
+            else:
+                self.alpha = nn.Parameter(torch.ones(out_features) * kn_alpha, requires_grad=False)
         else:
             raise NotImplementedError('Only semi-Monte Carlo and reduced_kn are currently implemented.')
-            
+
         self.return_ood = return_ood
 
     @property
@@ -265,8 +275,6 @@ class tDiscClassification(nn.Module):
         elif self.W_dist == DenseNormal:
             tril = torch.tril(self.W_offdiag, diagonal=-1) + torch.diag_embed(cov_diag)
             cov = self.W_dist(self.W_mean, tril)
-        elif self.W_dist == LowRankNormal:
-            cov = self.W_dist(self.W_mean, self.W_offdiag, cov_diag)
 
         return cov
 
@@ -291,14 +299,22 @@ class tDiscClassification(nn.Module):
         return linear_term - lse_term
 
     def reduced_kn(self, x, y):
-        # Uses the Knowles-Minka bound with alpha = 1/2
+        # Uses the Knowles-Minka bound with alpha = 1/2 - alpha/Sigma
         # https://tminka.github.io/papers/knowles-minka-nips2011.pdf
+
         Wx = (self.W @ x[..., None]).squeeze(-1)
-        log_softmax_term = F.log_softmax(Wx.mean, dim=-1)[torch.arange(x.shape[0]), y]
-        exp_cov = torch.exp(self.noise_log_rate - self.noise_log_dof)
-        cov = (Wx.variance + 1) * exp_cov
-        return log_softmax_term - (1/8) * cov.sum(-1)
-        
+        cov = (Wx.variance + 1)
+        linear_term = Wx.mean[torch.arange(x.shape[0]), y]
+
+        pre_lse_term = Wx.mean + self.alpha * cov
+        lse_term = torch.logsumexp(pre_lse_term, dim=-1)
+
+        exp_cov = torch.exp(self.noise_log_rate - self.noise_log_dof + 1)
+        exp_prec = torch.exp(self.noise_log_dof - self.noise_log_rate)
+
+        cov_term = cov * (exp_cov/4 + exp_prec * self.alpha ** 2 - self.alpha)
+        return linear_term - lse_term - 0.5 * cov_term.sum(-1)
+
     def forward(self, x):
         out = VBLLReturn(torch.distributions.Categorical(probs = self.predictive(x)),
                           self._get_train_loss_fn(x),
@@ -313,7 +329,7 @@ class tDiscClassification(nn.Module):
         mean = Wx.mean
         pred_cov = (Wx.variance + 1) * cov_sample
         return Normal(mean, torch.sqrt(pred_cov))
-        
+
     def predictive(self, x, n_samples = 20):
         softmax_samples = F.softmax(self.logit_predictive(x).rsample(sample_shape=torch.Size([n_samples])), dim=-1)
         return torch.clip(torch.mean(softmax_samples, dim=0),min=0.,max=1.)
