@@ -292,6 +292,8 @@ class HetRegression(nn.Module):
         Scale of prior covariance matrix
     noise_prior_scale : float
         Scale of prior/init for the noise covariance VBLL
+    grad_correction_scale : float
+        Correction factor for mean estimation, in range [0,1] with 0 corresponding to standard estimator
     """
     def __init__(self,
                  in_features,
@@ -299,10 +301,12 @@ class HetRegression(nn.Module):
                  regularization_weight,
                  parameterization='dense',
                  prior_scale=1.,
-                 noise_prior_scale=0.01):
+                 noise_prior_scale=0.01,
+                 grad_correction_scale=0.):
         super(HetRegression, self).__init__()
 
         self.regularization_weight = regularization_weight
+        self.grad_correction = grad_correction_scale
 
         # define prior, currently fixing zero mean and arbitrarily scaled cov
         self.prior_scale = prior_scale * (1. / in_features)
@@ -383,20 +387,20 @@ class HetRegression(nn.Module):
             expect_sigma_inv = torch.exp(-log_noise_cov.mean + 0.5 * log_noise_cov.scale ** 2)
             expect_log_sigma = log_noise_cov.mean
 
+            grad_correction = (expect_sigma_inv.detach()) ** self.grad_correction
+
             # compute pred density with expected Sigma terms
             err = y - (W.mean @ x[...,None]).squeeze(-1)
-            mse_term = 0.5 * (err.pow(2) * expect_sigma_inv).sum(-1)
-            logdet_term = 0.5 * expect_log_sigma.sum(-1)
-            pred_likelihood = - mse_term - logdet_term
+            mse_term = (err.pow(2) * expect_sigma_inv).sum(-1)
 
-            trace_term = 0.5 * ((W.covariance_weighted_inner_prod(x.unsqueeze(-2)[..., None])))
-            total_elbo = torch.mean(pred_likelihood - trace_term)
+            logdet_term = (expect_log_sigma).sum(-1)
+            trace_term = W.covariance_weighted_inner_prod(x.unsqueeze(-2)[..., None])
+            total_elbo = - 0.5 * torch.mean(grad_correction * (mse_term + logdet_term + trace_term))
 
             # compute expected KL
-            kl_term_ll = torch.mean(expected_gaussian_kl(W, self.prior_scale, expect_sigma_inv))
-            kl_term_noise = gaussian_kl(self.M(), self.noise_prior_scale)
+            kl_term_ll = torch.mean(grad_correction * expected_gaussian_kl(W, self.prior_scale, expect_sigma_inv))
+            kl_term_noise = torch.mean(grad_correction * gaussian_kl(M, self.noise_prior_scale))
             total_elbo -= self.regularization_weight * (kl_term_noise + kl_term_ll)
-
             return -total_elbo
 
         return loss_fn
