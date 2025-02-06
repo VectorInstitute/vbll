@@ -466,7 +466,7 @@ class HetClassification(nn.Module):
     # ----- bounds
     def semimontecarlo_bound(self, x, y):
         # samples noise within logit_predictive        
-        pred = self.logit_predictive(x)
+        pred = self.logit_predictive(x, consistent_variance=False) # no point in sampling consistent variance for loss computation
 
         linear_term = pred.mean[torch.arange(x.shape[0]), y]
         pre_lse_term = pred.mean + 0.5 * pred.covariance_diagonal
@@ -490,25 +490,28 @@ class HetClassification(nn.Module):
         cov_term = cov * (exp_cov/4 + exp_prec * self.alpha ** 2 - self.alpha)
         return linear_term - lse_term - 0.5 * cov_term.sum(-1)
 
-    def forward(self, x):
+    def forward(self, x, consistent_variance=False):
         # need to return sampling-based output
-        out = VBLLReturn(torch.distributions.Categorical(probs = self.predictive(x)),
+        out = VBLLReturn(torch.distributions.Categorical(probs = self.predictive(x, consistent_variance)),
                          self._get_train_loss_fn(x),
-                         self._get_val_loss_fn(x))
-        if self.return_ood: out.ood_scores = self.max_predictive(x)
+                         self._get_val_loss_fn(x, consistent_variance))
+        if self.return_ood: out.ood_scores = self.max_predictive(x, consistent_variance)
         return out
 
-    def logit_predictive(self, x):
+    def logit_predictive(self, x, consistent_variance):
         # sample noise (single sample)
-        M = self.M.rsample()
-        sigma2 = torch.exp(self.log_noise(x,M))
+        if consistent_variance:
+            sigma2 = torch.exp(self.log_noise(x,self.M.rsample()))
+        else:
+            sigma2 = torch.exp(self.log_noise(x,self.M).rsample())
+            
         Wx = (self.W @ x[..., None]).squeeze(-1)
         mean = Wx.mean
         stdev = torch.sqrt((Wx.variance + 1) * sigma2)
         return Normal(mean, stdev)
 
-    def predictive(self, x, n_samples = 20):
-        softmax_samples = F.softmax(self.logit_predictive(x).rsample(sample_shape=torch.Size([n_samples])), dim=-1)
+    def predictive(self, x, consistent_variance, n_samples = 20):
+        softmax_samples = F.softmax(self.logit_predictive(x, consistent_variance).rsample(sample_shape=torch.Size([n_samples])), dim=-1)
         return torch.clip(torch.mean(softmax_samples, dim=0),min=0.,max=1.)
 
     def _get_train_loss_fn(self, x):
@@ -529,14 +532,14 @@ class HetClassification(nn.Module):
 
     def _get_val_loss_fn(self, x):
         def loss_fn(y):
-            return -torch.mean(torch.log(self.predictive(x)[torch.arange(x.shape[0]), y]))
+            return -torch.mean(torch.log(self.predictive(x, consistent_variance)[torch.arange(x.shape[0]), y]))
 
         return loss_fn
 
     # ----- OOD metrics
 
-    def max_predictive(self, x):
-        return torch.max(self.predictive(x), dim=-1)[0]
+    def max_predictive(self, x, consistent_variance):
+        return torch.max(self.predictive(x, consistent_variance), dim=-1)[0]
         
 
 class GenClassification(nn.Module):
