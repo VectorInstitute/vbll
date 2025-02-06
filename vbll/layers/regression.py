@@ -340,7 +340,7 @@ class HetRegression(nn.Module):
 
         else:
             raise ValueError('Invalid cov parameterization')
-
+    @property
     def M(self):
         cov_diag = torch.exp(self.M_logdiag)
         if self.M_dist == Normal:
@@ -350,7 +350,8 @@ class HetRegression(nn.Module):
             cov = self.M_dist(self.M_mean, tril)
 
         return cov
-
+    
+    @property
     def W(self):
         cov_diag = torch.exp(self.W_logdiag)
         if self.W_dist == Normal:
@@ -364,25 +365,28 @@ class HetRegression(nn.Module):
     def log_noise(self, x, M):
         return (M @ x[..., None]).squeeze(-1)
 
-    def forward(self, x):
+    def forward(self, x, consistent_variance=False):
         # TODO: return mixture distribution as opposed to a single noise sample
-        out = VBLLReturn(self.predictive_sample(x),
+        out = VBLLReturn(self.predictive_sample(x, consistent_variance),
                          self._get_train_loss_fn(x),
-                         self._get_val_loss_fn(x))
+                         self._get_val_loss_fn(x, consistent_variance))
         return out
 
-    def predictive_sample(self, x):
-        M = self.M().rsample()
-        sigma2 = torch.exp(self.log_noise(x,M))
-        Wx = (self.W() @ x[..., None]).squeeze(-1)
+    def predictive_sample(self, x, consistent_variance):
+        if consistent_variance:
+            sigma2 = torch.exp(self.log_noise(x,self.M.rsample()))
+        else:
+            sigma2 = torch.exp(self.log_noise(x,self.M).rsample())
+            
+        Wx = (self.W @ x[..., None]).squeeze(-1)
         mean = Wx.mean
         cov = torch.sqrt((Wx.variance + 1) * sigma2)
         return Normal(mean, cov)
 
     def _get_train_loss_fn(self, x):
         def loss_fn(y):
-            W = self.W()
-            M = self.M()
+            W = self.W
+            M = self.M
             log_noise_cov = self.log_noise(x, M)
             expect_sigma_inv = torch.exp(-log_noise_cov.mean + 0.5 * log_noise_cov.scale ** 2)
             expect_log_sigma = log_noise_cov.mean
@@ -405,13 +409,13 @@ class HetRegression(nn.Module):
 
         return loss_fn
 
-    def _get_val_loss_fn(self, x, n_samples = 20):
+    def _get_val_loss_fn(self, x, consistent_variance, n_samples = 20):
         def loss_fn(y):
             # sample noise n times
             # compute log likelihood under variational posterior via marginalization with sampled noise
             running_loss = 0.
             for i in range(n_samples):
-                running_loss += -torch.mean(self.predictive_sample(x).log_prob(y).sum(-1)) # sum over output dims
+                running_loss += -torch.mean(self.predictive_sample(x, consistent_variance).log_prob(y).sum(-1)) # sum over output dims
             return running_loss / n_samples
 
         return loss_fn
