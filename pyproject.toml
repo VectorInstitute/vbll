@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "vbll"
-version = "0.3.0"
+version = "0.3.1"
 description = ""
 authors = ["John Willes <johnwilles@gmail.com>"]
 readme = "README.md"
@@ -9,8 +9,6 @@ readme = "README.md"
 python = "^3.9"
 torch = ">= 1.6.0"
 numpy = ">= 1.21.0"
-fannypack = ">= 0.0.25"
-
 
 [build-system]
 requires = ["poetry-core"]

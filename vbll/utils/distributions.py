@@ -6,7 +6,90 @@ from dataclasses import dataclass
 from collections.abc import Callable
 import abc
 import warnings
-import fannypack.utils as fu
+from typing import Optional, Union
+
+# Credit to https://github.com/brentyi/fannypack/blob/2888aa5d969824ac1e1a528264674ece3f4703f9/fannypack/utils/_math.py
+def cholesky_inverse(u: torch.Tensor, upper: bool = False) -> torch.Tensor:
+    """Alternative to `torch.cholesky_inverse()`, with support for batch dimensions.
+
+    Relevant issue tracker: https://github.com/pytorch/pytorch/issues/7500
+
+    Args:
+        u (torch.Tensor): Triangular Cholesky factor. Shape should be `(*, N, N)`.
+        upper (bool, optional): Whether to consider the Cholesky factor as a lower or
+            upper triangular matrix.
+
+    Returns:
+        torch.Tensor:
+    """
+    if u.dim() == 2 and not u.requires_grad:
+        return torch.cholesky_inverse(u, upper=upper)
+    return torch.cholesky_solve(torch.eye(u.size(-1)).expand(u.size()), u, upper=upper)
+
+# Credit to https://github.com/brentyi/fannypack/blob/2888aa5d969824ac1e1a528264674ece3f4703f9/fannypack/utils/_math.py
+def cholupdate(
+    L: torch.Tensor,
+    x: torch.Tensor,
+    weight: Optional[Union[torch.Tensor, float]] = None,
+) -> torch.Tensor:
+    """Batched rank-1 Cholesky update.
+
+    Computes the Cholesky decomposition of `RR^T + weight * xx^T`.
+
+    Args:
+        L (torch.Tensor): Lower triangular Cholesky decomposition of a PSD matrix. Shape
+            should be `(*, matrix_dim, matrix_dim)`.
+        x (torch.Tensor): Rank-1 update vector. Shape should be `(*, matrix_dim)`.
+        weight (torch.Tensor or float, optional): Set to -1 for "downdate". Shape must
+            be broadcastable with `(*, matrix_dim)`.
+
+    Returns:
+        torch.Tensor: New L matrix. Same shape as L.
+    """
+    # Expected shapes: (*, dim, dim) and (*, dim)
+    batch_dims = L.shape[:-2]
+    matrix_dim = x.shape[-1]
+    assert x.shape[:-1] == batch_dims
+    assert matrix_dim == L.shape[-1] == L.shape[-2]
+
+    # Flatten batch dimensions, and clone for tensors we need to mutate
+    L = L.reshape((-1, matrix_dim, matrix_dim))
+    x = x.reshape((-1, matrix_dim)).clone()
+    L_out_cols = []
+
+    sign: Union[float, torch.Tensor]
+    if weight is None:
+        sign = L.new_ones((1,))
+    elif isinstance(weight, float):
+        x = x * np.sqrt(np.abs(weight))
+        sign = float(np.sign(weight))
+    else:
+        x = x * torch.sqrt(torch.abs(weight))
+        sign = torch.sign(weight)
+
+    # Cholesky update; mostly copied from Wikipedia:
+    # https://en.wikipedia.org/wiki/Cholesky_decomposition
+    for k in range(matrix_dim):
+        r = torch.sqrt(L[:, k, k] ** 2 + sign * x[:, k] ** 2)
+        c = (r / L[:, k, k])[:, None]
+        s = (x[:, k] / L[:, k, k])[:, None]
+
+        # We build output column-by-column to avoid in-place modification errors
+        L_out_col = torch.zeros_like(L[:, :, k])
+        L_out_col[:, k] = r
+        L_out_col[:, k + 1 :] = (L[:, k + 1 :, k] + sign * s * x[:, k + 1 :]) / c
+        L_out_cols.append(L_out_col)
+
+        # We clone x at each iteration, also to avoid in-place modification errors
+        x_next = x.clone()
+        x_next[:, k + 1 :] = c * x[:, k + 1 :] - s * L_out_col[:, k + 1 :]
+        x = x_next
+
+    # Stack columns together
+    L_out = torch.stack(L_out_cols, dim=2)
+
+    # Unflatten batch dimensions and return
+    return L_out.reshape(batch_dims + (matrix_dim, matrix_dim))
 
 def get_parameterization(p):
   if p in cov_param_dict:
@@ -163,7 +246,7 @@ class DenseNormalPrec(torch.distributions.MultivariateNormal):
     def covariance(self):
         warnings.warn("Direct matrix inverse for dense covariances is O(N^3), consider using eg inverse weighted inner product")
         # TODO replace with cholesky_inverse
-        return fu.cholesky_inverse(self.tril)
+        return cholesky_inverse(self.tril)
 
     @property
     def inverse_covariance(self):
@@ -206,11 +289,11 @@ class DenseNormalPrec(torch.distributions.MultivariateNormal):
         # recursively update cholesky
         for i in range(X.shape[0]):
             x = X[i].unsqueeze(-2) / torch.sqrt(noise_cov) # out_dim * feat_dim
-            chol = fu.cholupdate(chol, x)
+            chol = cholupdate(chol, x)
 
         cov_update = (prec @ self.loc.unsqueeze(-1)) # out_dim * feat dim * 1
         cov_update += XTy.unsqueeze(-1) # out_dim * feat dim * 1
-        new_loc = (fu.cholesky_inverse(chol) @ cov_update).squeeze(-1) # out_dim * feat dim
+        new_loc = (cholesky_inverse(chol) @ cov_update).squeeze(-1) # out_dim * feat dim
         
         return chol, new_loc
 

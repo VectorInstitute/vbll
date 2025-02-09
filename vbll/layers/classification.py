@@ -219,7 +219,7 @@ class tDiscClassification(nn.Module):
                  return_ood=False,
                  prior_scale=1.,
                  wishart_scale=1.,
-                 dof=1.,
+                 dof=2.,
                  cov_rank=None,
                  kn_alpha=None,
                  ):
@@ -232,7 +232,8 @@ class tDiscClassification(nn.Module):
         # define prior, currently fixing zero mean and arbitrarily scaled cov
         self.prior_dof = dof
         self.prior_rate = 1./wishart_scale
-        self.prior_scale = prior_scale * (2. / in_features) # kaiming init
+        exp_cov = self.prior_rate/(self.prior_dof - 1)
+        self.prior_scale = prior_scale * 2. / (exp_cov * in_features) 
 
         # variational posterior over noise params
         self.noise_log_dof = nn.Parameter(torch.ones(out_features) * np.log(self.prior_dof))
@@ -259,7 +260,7 @@ class tDiscClassification(nn.Module):
         elif softmax_bound == 'reduced_kn':
             self.softmax_bound = self.reduced_kn
             if kn_alpha is None:
-                self.alpha = nn.Parameter(0.1 * torch.randn(out_features))
+                self.alpha = nn.Parameter(0.0 * torch.ones(out_features))
             else:
                 self.alpha = nn.Parameter(torch.ones(out_features) * kn_alpha, requires_grad=False)
         else:
