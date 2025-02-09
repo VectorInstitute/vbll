@@ -531,7 +531,7 @@ class HetClassification(nn.Module):
 
         return loss_fn
 
-    def _get_val_loss_fn(self, x):
+    def _get_val_loss_fn(self, x, consistent_variance):
         def loss_fn(y):
             return -torch.mean(torch.log(self.predictive(x, consistent_variance)[torch.arange(x.shape[0]), y]))
 
