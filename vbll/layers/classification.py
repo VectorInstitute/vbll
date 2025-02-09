@@ -260,9 +260,9 @@ class tDiscClassification(nn.Module):
         elif softmax_bound == 'reduced_kn':
             self.softmax_bound = self.reduced_kn
             if kn_alpha is None:
-                self.alpha = nn.Parameter(0.1 * torch.ones(out_features))
+                self.alpha = nn.Parameter(0.1 * torch.ones(1))
             else:
-                self.alpha = nn.Parameter(torch.ones(1) * kn_alpha, requires_grad=False)
+                self.alpha = nn.Parameter(torch.ones(1) * kn_alpha)
         else:
             raise NotImplementedError('Only semi-Monte Carlo and reduced_kn are currently implemented.')
 
@@ -432,9 +432,9 @@ class HetClassification(nn.Module):
         elif softmax_bound == 'reduced_kn':
             self.softmax_bound = self.reduced_kn
             if kn_alpha is None:
-                self.alpha = nn.Parameter(0.1 * torch.ones(out_features))
+                self.alpha = nn.Parameter(0.1 * torch.ones(1))
             else:
-                self.alpha = nn.Parameter(torch.ones(1) * kn_alpha, requires_grad=False)
+                self.alpha = nn.Parameter(torch.ones(1) * kn_alpha)
         else:
             raise NotImplementedError('Only semi-Monte Carlo and reduced_kn are currently implemented.')
 
