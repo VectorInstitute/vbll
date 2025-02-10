@@ -198,13 +198,13 @@ class tRegression(nn.Module):
 
         # last layer distribution
         self.W_dist = get_parameterization(parameterization)
-        self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
+        self.W_mean = nn.Parameter(torch.randn(out_features, in_features) * np.sqrt(2. / in_features))
 
-        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features))
+        self.W_logdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
         if parameterization == 'dense':
-            self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features))
+            self.W_offdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features, in_features)/in_features)
         elif parameterization == 'lowrank':
-            self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, cov_rank))
+            self.W_offdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features, cov_rank))
         elif parameterization == 'dense_precision':
             raise NotImplementedError()
             
@@ -317,21 +317,21 @@ class HetRegression(nn.Module):
 
         # last layer distribution
         self.W_dist = get_parameterization(parameterization)
-        self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
+        self.W_mean = nn.Parameter(torch.randn(out_features, in_features) * np.sqrt(2. / in_features))
 
         self.M_dist = get_parameterization(parameterization) # currently, use same parameterization
-        self.M_mean = nn.Parameter(torch.randn(out_features, in_features))
+        self.M_mean = nn.Parameter(torch.randn(out_features, in_features) * np.sqrt(2. / in_features))
 
         if parameterization == 'diagonal':
-            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
-            self.M_logdiag = nn.Parameter(torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
+            self.W_logdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
+            self.M_logdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
 
         elif parameterization == 'dense':
-            self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
-            self.W_offdiag = nn.Parameter((1e-2) * torch.randn(out_features, in_features, in_features)/in_features)
+            self.W_logdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
+            self.W_offdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features, in_features)/in_features)
 
-            self.M_logdiag = nn.Parameter(torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
-            self.M_offdiag = nn.Parameter((1e-2) * torch.randn(out_features, in_features, in_features)/in_features)
+            self.M_logdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
+            self.M_offdiag = nn.Parameter(1e-3 * * torch.randn(out_features, in_features, in_features)/in_features)
         elif parameterization == 'dense_precision':
             raise NotImplementedError()
 
