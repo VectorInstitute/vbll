@@ -331,7 +331,7 @@ class HetRegression(nn.Module):
             self.W_offdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features, in_features)/in_features)
 
             self.M_logdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
-            self.M_offdiag = nn.Parameter(1e-3 * * torch.randn(out_features, in_features, in_features)/in_features)
+            self.M_offdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features, in_features)/in_features)
         elif parameterization == 'dense_precision':
             raise NotImplementedError()
 
