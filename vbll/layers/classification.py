@@ -94,11 +94,11 @@ class DiscClassification(nn.Module):
         self.W_dist = get_parameterization(parameterization)
         self.W_mean = nn.Parameter(torch.randn(out_features, in_features) * np.sqrt(2./in_features)) # kaiming init
 
-        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - np.log(in_features)) # make output dim invariant
+        self.W_logdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features) - np.log(in_features)) # make output dim invariant
         if parameterization == 'dense':
-            self.W_offdiag = nn.Parameter(0.01 * torch.randn(out_features, in_features, in_features)/in_features) # init off dim elements small
+            self.W_offdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features, in_features)/in_features) # init off dim elements small
         elif parameterization == 'lowrank':
-            self.W_offdiag = nn.Parameter(0.01 * torch.randn(out_features, in_features, cov_rank)/in_features) # init off dim elements small
+            self.W_offdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features, cov_rank)/in_features) # init off dim elements small
         
         if softmax_bound == 'jensen':
             self.softmax_bound = self.jensen_bound
@@ -243,11 +243,11 @@ class tDiscClassification(nn.Module):
         self.W_dist = get_parameterization(parameterization)
         self.W_mean = nn.Parameter(torch.randn(out_features, in_features) * np.sqrt(2./in_features)) # kaiming init
 
-        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features)) # make output dim invariant
+        self.W_logdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features) - 0.5 * np.log(in_features)) # make output dim invariant
         if parameterization == 'diagonal':
             pass
         elif parameterization == 'dense':
-            self.W_offdiag = nn.Parameter(0.01 * torch.randn(out_features, in_features, in_features))
+            self.W_offdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features, in_features))
         elif parameterization == 'diagonal_natural':
             raise NotImplementedError('diagonal_natural not implemented')
         elif parameterization == 'lowrank':
@@ -407,19 +407,19 @@ class HetClassification(nn.Module):
 
         # last layer distribution
         self.W_dist = get_parameterization(parameterization)
-        self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
+        self.W_mean = nn.Parameter(torch.randn(out_features, in_features) * np.sqrt(2 / in_features))
 
         self.M_dist = get_parameterization(parameterization) # currently, use same parameterization
-        self.M_mean = nn.Parameter(torch.randn(out_features, in_features))
+        self.M_mean = nn.Parameter(torch.randn(out_features, in_features) * np.sqrt(2 / in_features))
         
-        self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
-        self.M_logdiag = nn.Parameter(torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
+        self.W_logdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
+        self.M_logdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features) + 0.5 * np.log(noise_prior_scale/in_features))
 
         if parameterization == 'diagonal':
             pass
         elif parameterization == 'dense':
-            self.W_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features)
-            self.M_offdiag = nn.Parameter(torch.randn(out_features, in_features, in_features)/in_features + 0.5 * np.log(noise_prior_scale))
+            self.W_offdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features, in_features)/in_features)
+            self.M_offdiag = nn.Parameter(1e-3 * torch.randn(out_features, in_features, in_features)/in_features + 0.5 * np.log(noise_prior_scale))
         elif parameterization == 'dense_precision':
             raise NotImplementedError('dense_precision not implemented')
         elif parameterization == 'lowrank':
