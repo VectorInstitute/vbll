@@ -404,7 +404,7 @@ class HetRegression(nn.Module):
             # compute expected KL
             kl_term_ll = torch.mean(grad_correction * expected_gaussian_kl(W, self.prior_scale, expect_sigma_inv))
             kl_term_noise = torch.mean(grad_correction * gaussian_kl(M, self.noise_prior_scale))
-            total_elbo -= self.regularization_weight * kl_term_noise + kl_term_ll
+            total_elbo -= self.regularization_weight * kl_term_ll + kl_term_noise
             return -total_elbo
 
         return loss_fn
