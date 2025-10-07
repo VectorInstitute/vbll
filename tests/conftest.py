@@ -96,7 +96,17 @@ def classification_params():
         'regularization_weight': 0.1,
         'prior_scale': 1.0,
         'wishart_scale': 1.0,
-        'dof': 1.0,
+        'dof': 2.0,
+        'return_ood': False
+    }
+
+@pytest.fixture
+def het_classification_params():
+    """Common parameters for hetclassification layers."""
+    return {
+        'regularization_weight': 0.1,
+        'prior_scale': 1.0,
+        'noise_prior_scale': 2.0,
         'return_ood': False
     }
 

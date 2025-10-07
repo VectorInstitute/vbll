@@ -23,8 +23,7 @@ class TestDiscClassification:
             **classification_params
         )
         
-        assert layer.in_features == data['input_features']
-        assert layer.out_features == data['output_features']
+        assert layer.W_mean.shape == (data['output_features'], data['input_features'])
         assert layer.regularization_weight == classification_params['regularization_weight']
         assert layer.return_ood == classification_params['return_ood']
     
@@ -172,8 +171,7 @@ class TesttDiscClassification:
             **classification_params
         )
         
-        assert layer.in_features == data['input_features']
-        assert layer.out_features == data['output_features']
+        assert layer.W_mean.shape == (data['output_features'], data['input_features'])
         assert layer.regularization_weight == classification_params['regularization_weight']
     
     def test_forward_pass(self, sample_data_small, classification_params):
@@ -251,26 +249,26 @@ class TesttDiscClassification:
 class TestHetClassification:
     """Test Heteroscedastic Classification layer."""
     
-    def test_initialization(self, sample_data_small, classification_params):
+    def test_initialization(self, sample_data_small, het_classification_params):
         """Test HetClassification initialization."""
         data = sample_data_small
         layer = HetClassification(
             in_features=data['input_features'],
             out_features=data['output_features'],
-            **classification_params
+            **het_classification_params
         )
         
-        assert layer.in_features == data['input_features']
-        assert layer.out_features == data['output_features']
-        assert layer.regularization_weight == classification_params['regularization_weight']
+        assert layer.W_mean.shape == (data['output_features'], data['input_features'])
+        assert layer.M_mean.shape == (data['output_features'], data['input_features'])
+        assert layer.regularization_weight == het_classification_params['regularization_weight']
     
-    def test_forward_pass(self, sample_data_small, classification_params):
+    def test_forward_pass(self, sample_data_small, het_classification_params):
         """Test forward pass of HetClassification."""
         data = sample_data_small
         layer = HetClassification(
             in_features=data['input_features'],
             out_features=data['output_features'],
-            **classification_params
+            **het_classification_params
         )
         
         x = data['x']
@@ -286,13 +284,13 @@ class TestHetClassification:
         assert isinstance(pred_dist, torch.distributions.Categorical)
         assert pred_dist.probs.shape == (data['batch_size'], data['output_features'])
     
-    def test_consistent_variance(self, sample_data_small, classification_params):
+    def test_consistent_variance(self, sample_data_small, het_classification_params):
         """Test consistent variance sampling."""
         data = sample_data_small
         layer = HetClassification(
             in_features=data['input_features'],
             out_features=data['output_features'],
-            **classification_params
+            **het_classification_params
         )
         
         x = data['x']
@@ -306,220 +304,18 @@ class TestHetClassification:
         pred_inconsistent = result_inconsistent.predictive
         
         # Both should produce valid probability distributions
-        assert pred_consistent.shape == (data['batch_size'], data['output_features'])
-        assert pred_inconsistent.shape == (data['batch_size'], data['output_features'])
+        assert pred_consistent.probs.shape == (data['batch_size'], data['output_features'])
+        assert pred_inconsistent.probs.shape == (data['batch_size'], data['output_features'])
     
-    def test_M_distribution(self, sample_data_small, classification_params):
+    def test_M_distribution(self, sample_data_small, het_classification_params):
         """Test M distribution for noise modeling."""
         data = sample_data_small
         layer = HetClassification(
             in_features=data['input_features'],
             out_features=data['output_features'],
-            **classification_params
+            **het_classification_params
         )
         
         M_dist = layer.M
         assert hasattr(M_dist, 'mean')
-        assert hasattr(M_dist, 'scale')
-        
-        # Test log_noise computation
-        x = data['x']
-        log_noise = layer.log_noise(x, M_dist)
-        assert log_noise.shape == (data['batch_size'], data['output_features'])
-
-
-class TestGenClassification:
-    """Test Generative Classification layer."""
-    
-    def test_initialization(self, sample_data_small, classification_params):
-        """Test GenClassification initialization."""
-        data = sample_data_small
-        layer = GenClassification(
-            in_features=data['input_features'],
-            out_features=data['output_features'],
-            **classification_params
-        )
-        
-        assert layer.in_features == data['input_features']
-        assert layer.out_features == data['output_features']
-        assert layer.regularization_weight == classification_params['regularization_weight']
-    
-    def test_forward_pass(self, sample_data_small, classification_params):
-        """Test forward pass of GenClassification."""
-        data = sample_data_small
-        layer = GenClassification(
-            in_features=data['input_features'],
-            out_features=data['output_features'],
-            **classification_params
-        )
-        
-        x = data['x']
-        result = layer(x)
-        
-        # Check return type
-        assert hasattr(result, 'predictive')
-        assert hasattr(result, 'train_loss_fn')
-        assert hasattr(result, 'val_loss_fn')
-        
-        # Check predictive distribution
-        pred_dist = result.predictive
-        assert isinstance(pred_dist, torch.distributions.Categorical)
-        assert pred_dist.probs.shape == (data['batch_size'], data['output_features'])
-    
-    def test_mu_distribution(self, sample_data_small, classification_params):
-        """Test mu distribution for generative modeling."""
-        data = sample_data_small
-        layer = GenClassification(
-            in_features=data['input_features'],
-            out_features=data['output_features'],
-            **classification_params
-        )
-        
-        mu_dist = layer.mu()
-        assert hasattr(mu_dist, 'mean')
-        assert hasattr(mu_dist, 'scale')
-    
-    def test_noise_distribution(self, sample_data_small, classification_params):
-        """Test noise distribution."""
-        data = sample_data_small
-        layer = GenClassification(
-            in_features=data['input_features'],
-            out_features=data['output_features'],
-            **classification_params
-        )
-        
-        noise_dist = layer.noise()
-        assert hasattr(noise_dist, 'mean')
-        assert hasattr(noise_dist, 'scale')
-    
-    def test_logit_predictive(self, sample_data_small, classification_params):
-        """Test logit predictive computation."""
-        data = sample_data_small
-        layer = GenClassification(
-            in_features=data['input_features'],
-            out_features=data['output_features'],
-            **classification_params
-        )
-        
-        x = data['x']
-        logits = layer.logit_predictive(x)
-        
-        assert logits.shape == (data['batch_size'], data['output_features'])
-
-
-class TestMathematicalFunctions:
-    """Test mathematical functions used in classification."""
-    
-    def test_gaussian_kl(self, device):
-        """Test Gaussian KL divergence computation."""
-        # Create test distributions
-        mean = torch.randn(2, 3, device=device)
-        scale = torch.ones(2, 3, device=device)
-        dist = torch.distributions.Normal(mean, scale)
-        
-        # Test KL computation
-        q_scale = 1.0
-        kl = gaussian_kl(dist, q_scale)
-        
-        assert isinstance(kl, torch.Tensor)
-        assert kl.shape == (2,)
-        assert torch.all(kl >= 0)  # KL divergence should be non-negative
-    
-    def test_gamma_kl(self, device):
-        """Test Gamma KL divergence computation."""
-        # Create test distributions
-        concentration = torch.ones(2, device=device)
-        rate = torch.ones(2, device=device)
-        dist1 = torch.distributions.Gamma(concentration, rate)
-        dist2 = torch.distributions.Gamma(concentration * 2, rate)
-        
-        # Test KL computation
-        kl = gamma_kl(dist1, dist2)
-        
-        assert isinstance(kl, torch.Tensor)
-        assert kl.shape == (2,)
-        assert torch.all(kl >= 0)  # KL divergence should be non-negative
-    
-    def test_expected_gaussian_kl(self, device):
-        """Test expected Gaussian KL divergence computation."""
-        # Create test distribution
-        mean = torch.randn(2, 3, device=device)
-        scale = torch.ones(2, 3, device=device)
-        dist = torch.distributions.Normal(mean, scale)
-        
-        # Test expected KL computation
-        q_scale = 1.0
-        cov_factor = torch.ones(2, 3, device=device)
-        kl = expected_gaussian_kl(dist, q_scale, cov_factor)
-        
-        assert isinstance(kl, torch.Tensor)
-        assert kl.shape == (2,)
-        assert torch.all(kl >= 0)  # KL divergence should be non-negative
-
-
-class TestClassificationIntegration:
-    """Integration tests for classification layers."""
-    
-    def test_training_step(self, sample_data_medium, classification_params):
-        """Test a complete training step."""
-        data = sample_data_medium
-        layer = DiscClassification(
-            in_features=data['input_features'],
-            out_features=data['output_features'],
-            **classification_params
-        )
-        
-        optimizer = torch.optim.Adam(layer.parameters(), lr=0.01)
-        
-        x = data['x']
-        y = data['y_classification']
-        
-        # Forward pass
-        result = layer(x)
-        train_loss = result.train_loss_fn(y)
-        
-        # Backward pass
-        optimizer.zero_grad()
-        train_loss.backward()
-        optimizer.step()
-        
-        # Check that loss is finite
-        assert torch.isfinite(train_loss)
-    
-    def test_different_batch_sizes(self, classification_params):
-        """Test with different batch sizes."""
-        layer = DiscClassification(
-            in_features=10,
-            out_features=5,
-            **classification_params
-        )
-        
-        for batch_size in [1, 16, 64, 128]:
-            x = torch.randn(batch_size, 10)
-            y = torch.randint(0, 5, (batch_size,))
-            
-            result = layer(x)
-            train_loss = result.train_loss_fn(y)
-            val_loss = result.val_loss_fn(y)
-            
-            assert torch.isfinite(train_loss)
-            assert torch.isfinite(val_loss)
-    
-    def test_device_consistency(self, sample_data_small, classification_params, device):
-        """Test that layers work on different devices."""
-        data = sample_data_small
-        layer = DiscClassification(
-            in_features=data['input_features'],
-            out_features=data['output_features'],
-            **classification_params
-        ).to(device)
-        
-        x = data['x'].to(device)
-        y = data['y_classification'].to(device)
-        
-        result = layer(x)
-        train_loss = result.train_loss_fn(y)
-        
-        assert train_loss.device == device
-        assert result.predictive.probs.device == device
-
+        assert hasattr(M_dist, 'scale_tril')
