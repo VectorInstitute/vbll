@@ -111,6 +111,14 @@ def regression_params():
         'dof': 1.0
     }
 
+@pytest.fixture
+def het_regression_params():
+    """Common parameters for heteroscedastic regression layers."""
+    return {
+        'regularization_weight': 0.1,
+        'prior_scale': 1.0,
+        'noise_prior_scale': 1e-2,
+    }
 
 @pytest.fixture
 def parameterizations():
