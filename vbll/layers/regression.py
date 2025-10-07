@@ -83,7 +83,7 @@ class Regression(nn.Module):
 
         # last layer distribution
         self.W_dist = get_parameterization(parameterization)
-        self.W_mean = nn.Parameter(torch.randn(out_features, in_features))
+        self.W_mean = nn.Parameter(torch.randn(out_features, in_features) * np.sqrt(2./in_features)) # kaiming init
         
         if parameterization == 'diagonal':
             self.W_logdiag = nn.Parameter(torch.randn(out_features, in_features) - 0.5 * np.log(in_features))
