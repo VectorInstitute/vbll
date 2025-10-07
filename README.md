@@ -32,6 +32,18 @@ cd vbll
 pip install -e .
 ```
 
+## Testing
+
+Install the test dependencies and run the suite with `pytest`:
+
+```bash
+python -m pip install --upgrade pip
+pip install torch --extra-index-url https://download.pytorch.org/whl/cpu
+pip install -e .
+pip install pytest
+pytest
+```
+
 ## Usage and Tutorials
 Documentation is available [here](https://vbll.readthedocs.io/en/latest/). 
 
@@ -54,5 +66,4 @@ If you find VBLL useful in your research, please consider citing our [paper](htt
   year={2024}
 }
 ```
-
 

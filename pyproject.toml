@@ -10,6 +10,9 @@ python = "^3.9"
 torch = ">= 1.6.0"
 numpy = ">= 1.21.0"
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.0.0"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
