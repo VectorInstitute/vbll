@@ -525,7 +525,7 @@ class HetClassification(nn.Module):
             kl_term_noise = gaussian_kl(self.M, self.noise_prior_scale)
 
             total_elbo = torch.mean(self.softmax_bound(x, y))
-            total_elbo -= self.regularization_weight * ( kl_term_ll + kl_term_noise )
+            total_elbo -= self.regularization_weight * (kl_term_ll + kl_term_noise)
 
             return -total_elbo
 

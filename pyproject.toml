@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "vbll"
-version = "0.4.8"
+version = "0.4.9"
 description = ""
 authors = ["John Willes <johnwilles@gmail.com>"]
 readme = "README.md"
